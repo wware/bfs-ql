@@ -201,9 +201,13 @@ class PostgresBackend(GraphDbInterface):
         if rel_row["confidence"] is not None:
             meta["confidence"] = rel_row["confidence"]
         if rel_row["source_documents"]:
-            meta["source_documents"] = rel_row["source_documents"]
+            src = rel_row["source_documents"]
+            meta["source_documents"] = json.loads(src) if isinstance(src, str) else src
         if rel_row["properties"]:
-            meta.update(rel_row["properties"])
+            props = rel_row["properties"]
+            if isinstance(props, str):
+                props = json.loads(props)
+            meta.update(props)
         if evidence_rows:
             meta["provenance"] = [
                 {
@@ -290,5 +294,8 @@ def _node_metadata(row) -> dict[str, Any]:
         if val is not None:
             meta[key] = val
     if row["properties"]:
-        meta.update(row["properties"])
+        props = row["properties"]
+        if isinstance(props, str):
+            props = json.loads(props)
+        meta.update(props)
     return meta
