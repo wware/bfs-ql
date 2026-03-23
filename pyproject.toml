@@ -9,7 +9,19 @@ packages = ["bfsql"]
 name = "bfs-ql"
 version = "0.1.0"
 description = "BFS-QL graph query protocol for language models"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Will Ware" }]
 requires-python = ">=3.12"
+keywords = ["knowledge-graph", "llm", "mcp", "graph-rag", "bfs"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastmcp>=2.0",
     "pydantic>=2.0",
@@ -17,6 +29,10 @@ dependencies = [
     "pgvector>=0.3",
     "python-dotenv>=1.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/wware/bfs-ql"
+Book = "https://github.com/wware/bfs-ql-book"
 
 [project.scripts]
 bfs-ql = "bfsql.__main__:main"
