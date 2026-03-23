@@ -103,12 +103,50 @@ Once the data is loaded, point BFS-QL at the same Postgres instance. Make sure
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kgserver
 ```
 
-Then run the MCP server:
+Start the MCP server in SSE mode:
 
 ```bash
 cd ~/bfs-ql
 uv run bfs-ql serve --backend postgres --transport sse \
   --description "Medical literature knowledge graph (medlit bundle, 36 PubMed papers)"
+```
+
+Then register it with Claude Code (one-time setup):
+
+```bash
+claude mcp add --transport sse --scope user bfs-ql http://127.0.0.1:8000/sse
+```
+
+Verify it's connected:
+
+```bash
+claude mcp list
+# bfs-ql: http://127.0.0.1:8000/sse (SSE) - ✓ Connected
+```
+
+Start a new Claude Code session -- the four BFS-QL tools (`describe_schema`,
+`search_entities`, `bfs_query`, `describe_entity`) will be available immediately.
+
+## Gotcha: Integration Tests Drop Tables
+
+The Postgres integration tests (`tests/test_postgres.py`) create their own
+`entity`, `relationship`, and `evidence` tables and drop them on teardown. This
+will wipe the demo data. After running the test suite, reload the bundle:
+
+```bash
+psql postgresql://postgres:postgres@localhost:5432/kgserver -c "DELETE FROM bundle;"
+
+cd ~/kgraph && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kgserver \
+BUNDLE_PATH=~/kgraph/medlit_bundle uv run python -c "
+import sys; sys.path.insert(0, 'kgserver')
+from sqlmodel import SQLModel
+from query.storage_factory import get_engine
+from query.bundle_loader import load_bundle_at_startup
+engine, db_url = get_engine()
+SQLModel.metadata.create_all(engine)
+load_bundle_at_startup(engine, db_url)
+print('Done.')
+"
 ```
 
 Or start an interactive session to call the tools directly:

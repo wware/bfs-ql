@@ -33,11 +33,19 @@ cp .env.example .env
 ## Quickstart
 
 ```bash
-# Start the MCP server against a Postgres/pgvector backend
-uv run bfs-ql serve --backend postgres --description "Biomedical literature graph"
-
-# Paste the printed MCP URL into your MCP client (Claude, Cursor, etc.)
+# Start the MCP server in SSE mode against a Postgres/pgvector backend
+cd ~/bfs-ql
+uv run bfs-ql serve --backend postgres --transport sse --description "Biomedical literature graph"
 ```
+
+Register with Claude Code (one-time):
+
+```bash
+claude mcp add --transport sse --scope user bfs-ql http://127.0.0.1:8000/sse
+```
+
+Start a new Claude Code session -- the four tools are immediately available.
+For other MCP clients (Cursor, etc.) point them at `http://127.0.0.1:8000/sse`.
 
 Once connected, the LLM has four tools. A typical session looks like this:
 
