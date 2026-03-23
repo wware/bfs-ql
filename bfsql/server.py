@@ -123,6 +123,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         max_hops: int,
         node_types: list[str] | None = None,
         predicates: list[str] | None = None,
+        topology_only: bool = False,
     ) -> dict:
         """Traverse the graph breadth-first from one or more seed entities.
 
@@ -133,9 +134,14 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 as stubs. Omit for full data on all nodes.
             predicates: Predicate names that receive full metadata. Others
                 appear as stubs. Omit for full data on all edges.
+            topology_only: If True, return only IDs and types for all nodes
+                and edges -- no metadata at all. Use this first on large or
+                unfamiliar graphs to see structure before fetching details.
 
         Returns:
-            BfsResult with nodes and edges.
+            BfsResult with nodes and edges. Edge provenance (text spans) is
+            omitted to keep size manageable -- use describe_entity() for full
+            provenance on a specific node.
         """
         result: BfsResult = await _bfs_query(_db(), BfsQuery(
             seeds=seeds,
@@ -143,7 +149,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             node_types=node_types or [],
             predicates=predicates or [],
         ))
-        return result.model_dump()
+        return _slim_result(result, topology_only=topology_only)
 
     # ------------------------------------------------------------------
     # Tool: describe_entity
@@ -184,6 +190,39 @@ def _bfs_query_description(entity_types: list[str], predicates: list[str]) -> st
             f"Valid predicates: {preds_str}."
         )
     return base
+
+
+_EDGE_META_STRIP = {"provenance", "strongest_evidence_quote", "evidence_confidence_avg", "created_at"}
+
+
+def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
+    """Serialize a BfsResult, stripping verbose fields to keep response size manageable.
+
+    When topology_only=True, all metadata is removed and every node/edge is
+    reduced to IDs and types only -- useful for an initial structural survey
+    of a large or unfamiliar graph.
+
+    Otherwise, verbose edge fields (provenance text, quotes, timestamps) are
+    stripped while confidence and source_documents are kept. Full provenance
+    is available via describe_entity().
+    """
+    data = result.model_dump()
+    if topology_only:
+        data["nodes"] = [
+            {"id": n["id"], "entity_type": n["entity_type"]}
+            for n in data.get("nodes", [])
+        ]
+        data["edges"] = [
+            {"subject": e["subject"], "predicate": e["predicate"], "object": e["object"]}
+            for e in data.get("edges", [])
+        ]
+    else:
+        for edge in data.get("edges", []):
+            meta = edge.get("metadata")
+            if isinstance(meta, dict):
+                for key in _EDGE_META_STRIP:
+                    meta.pop(key, None)
+    return data
 
 
 def _server_instructions() -> str:
