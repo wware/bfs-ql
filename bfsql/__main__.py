@@ -37,20 +37,16 @@ def main():
     args = parser.parse_args()
 
     if args.command == "serve":
-        asyncio.run(_serve(args))
+        from bfsql.server import create_server
 
+        if args.backend == "postgres":
+            from bfsql.backends.postgres import PostgresBackend
+            factory = PostgresBackend.create
+        else:
+            raise ValueError(f"Unknown backend: {args.backend}")
 
-async def _serve(args):
-    from bfsql.server import create_server
-
-    if args.backend == "postgres":
-        from bfsql.backends.postgres import PostgresBackend
-        backend = await PostgresBackend.create()
-    else:
-        raise ValueError(f"Unknown backend: {args.backend}")
-
-    mcp = create_server(backend, graph_description=args.description)
-    mcp.run(transport=args.transport)
+        mcp = create_server(factory, graph_description=args.description)
+        mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ _MAX_INJECT_TYPES = 20
 _MAX_INJECT_PREDICATES = 30
 
 
-def create_server(backend, graph_description: str = "") -> FastMCP:
+def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     """Build and return a FastMCP server wired to the given backend.
 
     Wraps the backend in CachedGraphDb, fetches entity types and predicates
@@ -24,21 +24,31 @@ def create_server(backend, graph_description: str = "") -> FastMCP:
     the schema is small enough.
 
     Args:
-        backend: Any GraphDbInterface implementation.
+        backend_or_factory: A GraphDbInterface instance, or an async callable
+            that returns one (created inside the server's event loop).
         graph_description: Human-readable description of the graph, included
             in describe_schema() responses.
     """
-    db = CachedGraphDb(backend)
+    # Detect whether we got a factory (async callable) or a live backend instance.
+    _is_factory = callable(backend_or_factory) and not hasattr(backend_or_factory, "search_entities")
 
     # These are populated during lifespan startup.
     _state: dict[str, Any] = {
         "entity_types": [],
         "predicates": [],
         "graph_description": graph_description,
+        # For backend instances (tests), wire up immediately; factories wait for lifespan.
+        "db": None if _is_factory else CachedGraphDb(backend_or_factory),
     }
 
     @asynccontextmanager
     async def lifespan(app):
+        if _is_factory:
+            backend = await backend_or_factory()
+            _state["db"] = CachedGraphDb(backend)
+        else:
+            backend = backend_or_factory
+        db = _state["db"]
         entity_types = await db.entity_types()
         predicates = await db.predicates()
         _state["entity_types"] = entity_types
@@ -53,6 +63,9 @@ def create_server(backend, graph_description: str = "") -> FastMCP:
         lifespan=lifespan,
     )
 
+    def _db() -> CachedGraphDb:
+        return _state["db"]
+
     # ------------------------------------------------------------------
     # Tool: describe_schema
     # ------------------------------------------------------------------
@@ -63,8 +76,8 @@ def create_server(backend, graph_description: str = "") -> FastMCP:
         """Return schema information for this graph."""
         return SchemaDescription(
             graph_description=_state["graph_description"],
-            entity_types=await db.entity_types(),
-            predicates=await db.predicates(),
+            entity_types=await _db().entity_types(),
+            predicates=await _db().predicates(),
         ).model_dump()
 
     # ------------------------------------------------------------------
@@ -83,7 +96,7 @@ def create_server(backend, graph_description: str = "") -> FastMCP:
         Returns:
             List of EntityStub records with id and entity_type.
         """
-        results = await db.search_entities(query)
+        results = await _db().search_entities(query)
         return [r.model_dump() for r in results]
 
     # ------------------------------------------------------------------
@@ -117,7 +130,7 @@ def create_server(backend, graph_description: str = "") -> FastMCP:
         Returns:
             BfsResult with nodes and edges.
         """
-        result: BfsResult = await _bfs_query(db, BfsQuery(
+        result: BfsResult = await _bfs_query(_db(), BfsQuery(
             seeds=seeds,
             max_hops=max_hops,
             node_types=node_types or [],
@@ -140,8 +153,8 @@ def create_server(backend, graph_description: str = "") -> FastMCP:
         Returns:
             Full node metadata as a flat dict.
         """
-        node = await db.get_node(id)
-        metadata = await db.metadata_for_node(id)
+        node = await _db().get_node(id)
+        metadata = await _db().metadata_for_node(id)
         return {"id": node.id, "entity_type": node.entity_type, **metadata}
 
     return mcp
