@@ -71,7 +71,10 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(description="Return the entity types, predicate vocabulary, and "
-              "description of this graph. Call this first against an unfamiliar graph.")
+              "description of this graph. Call this first against an unfamiliar graph. "
+              "The returned entity_types list is the complete set of valid node_types "
+              "values for bfs_query. Entity counts per type are not exposed directly -- "
+              "use bfs_query with a well-connected seed to explore coverage.")
     async def describe_schema() -> dict:
         """Return schema information for this graph."""
         return SchemaDescription(
@@ -84,14 +87,18 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     # Tool: search_entities
     # ------------------------------------------------------------------
 
-    @mcp.tool(description="Resolve a natural-language name or alias to one or more "
-              "canonical entity IDs. Always call this before bfs_query if you do not "
-              "already have a canonical ID.")
+    @mcp.tool(description="Search for entities by name or alias and return their "
+              "canonical IDs. Searches the entity name field -- use a specific name "
+              "like 'desmopressin' or 'Cushing disease', NOT an entity type like "
+              "'drug' or 'paper'. Always call this before bfs_query when you have a "
+              "name but not yet a canonical ID. Results may be ambiguous; inspect "
+              "entity_type to pick the right one.")
     async def search_entities(query: str) -> list[dict]:
         """Find entities by name or alias.
 
         Args:
-            query: Name, alias, or partial name to look up.
+            query: A specific entity name or partial name (e.g. 'desmopressin',
+                'Cushing disease'). Do NOT pass an entity type here.
 
         Returns:
             List of EntityStub records with id and entity_type.
@@ -183,10 +190,14 @@ def _server_instructions() -> str:
     return (
         "This MCP server exposes a knowledge graph via BFS-QL. "
         "Recommended workflow: "
-        "1) Call describe_schema() to learn entity types and predicates. "
-        "2) Call search_entities(name) to resolve names to canonical IDs -- "
-        "inspect results carefully, common names are often ambiguous. "
-        "3) Call bfs_query(seeds, max_hops, node_types, predicates) starting "
-        "with max_hops=1 and expand if needed. "
-        "4) Call describe_entity(id) on any stub node that warrants closer inspection."
+        "1) Call describe_schema() to learn entity types, predicates, and graph description. "
+        "2) Call search_entities(name) with a specific entity name (not a type) to resolve "
+        "it to a canonical ID. Inspect entity_type in results to pick the right match. "
+        "3) Call bfs_query(seeds, max_hops, node_types, predicates) to traverse the graph. "
+        "Start with max_hops=1 and expand if needed. Use node_types and predicates to focus "
+        "on the relevant parts of the graph -- non-matching nodes still appear as stubs so "
+        "topology is always complete. "
+        "4) Call describe_entity(id) on any stub node that warrants closer inspection. "
+        "Important: search_entities searches entity names, not entity types. To find all "
+        "entities of a given type, use bfs_query from a relevant seed with node_types filter."
     )
