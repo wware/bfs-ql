@@ -238,5 +238,8 @@ def _server_instructions() -> str:
         "topology is always complete. "
         "4) Call describe_entity(id) on any stub node that warrants closer inspection. "
         "Important: search_entities searches entity names, not entity types. To find all "
-        "entities of a given type, use bfs_query from a relevant seed with node_types filter."
+        "entities of a given type, use bfs_query from a relevant seed with node_types filter. "
+        "Entity IDs beginning with 'prov:' are provisional -- the pipeline that built this "
+        "graph could not resolve them to a canonical authority. They are structurally present "
+        "but carry no external meaning. Skip them or treat them as anonymous placeholders."
     )
