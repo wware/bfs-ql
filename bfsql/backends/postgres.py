@@ -187,15 +187,9 @@ class PostgresBackend(GraphDbInterface):
             if rel_row is None:
                 return {}
 
-            evidence_rows = await conn.fetch(
-                """
-                SELECT evidence_type, confidence_score, metadata_
-                FROM evidence
-                WHERE relationship_id = $1
-                ORDER BY confidence_score DESC NULLS LAST
-                """,
-                rel_row["id"],
-            )
+            # Try evidence table (test schema), then bundle_evidence (kgserver schema)
+            rel_key = f"{edge.subject}:{edge.predicate}:{edge.object}"
+            evidence_rows = await _fetch_evidence(conn, rel_row["id"], rel_key)
 
         meta: dict[str, Any] = {}
         if rel_row["confidence"] is not None:
@@ -209,14 +203,7 @@ class PostgresBackend(GraphDbInterface):
                 props = json.loads(props)
             meta.update(props)
         if evidence_rows:
-            meta["provenance"] = [
-                {
-                    "evidence_type": ev["evidence_type"],
-                    "confidence_score": ev["confidence_score"],
-                    **(ev["metadata_"] or {}),
-                }
-                for ev in evidence_rows
-            ]
+            meta["provenance"] = evidence_rows
         return meta
 
     async def entity_types(self) -> list[str]:
@@ -284,6 +271,60 @@ class PostgresBackend(GraphDbInterface):
                 limit,
             )
         return [EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows]
+
+
+async def _fetch_evidence(conn, rel_id, rel_key: str) -> list[dict[str, Any]]:
+    """Return provenance rows from whichever evidence table exists in this schema.
+
+    Supports two schemas:
+    - Test schema: ``evidence`` table with relationship_id UUID FK and
+      evidence_type / confidence_score / metadata_ columns.
+    - kgserver schema: ``bundle_evidence`` table keyed by relationship_key string
+      with text_span / confidence / document_id columns.
+    """
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT evidence_type, confidence_score, metadata_
+            FROM evidence
+            WHERE relationship_id = $1
+            ORDER BY confidence_score DESC NULLS LAST
+            """,
+            rel_id,
+        )
+        return [
+            {
+                "evidence_type": r["evidence_type"],
+                "confidence_score": r["confidence_score"],
+                **(r["metadata_"] or {}),
+            }
+            for r in rows
+        ]
+    except Exception:
+        pass
+
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT text_span, confidence, document_id, section
+            FROM bundle_evidence
+            WHERE relationship_key = $1
+            ORDER BY confidence DESC NULLS LAST
+            """,
+            rel_key,
+        )
+        return [
+            {
+                "evidence_type": "text_span",
+                "confidence_score": r["confidence"],
+                "text": r["text_span"],
+                "document_id": r["document_id"],
+                "section": r["section"],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
 
 
 def _node_metadata(row) -> dict[str, Any]:
