@@ -31,12 +31,16 @@ bfsql/
   __main__.py     -- CLI entrypoint (bfs-ql serve)
   backends/
     postgres.py   -- PostgresBackend (asyncpg + pgvector)
+    sparql.py     -- SparqlBackend (aiohttp; any SPARQL 1.1 endpoint)
 
 tests/
-  conftest.py     -- Rewrites DATABASE_URL to kgserver_test; creates DB if absent
-  test_engine.py  -- Unit tests for BFS traversal logic
-  test_server.py  -- Unit tests for MCP server tools
-  test_postgres.py -- Integration tests against live Postgres (skipped if DB unreachable)
+  conftest.py              -- Rewrites DATABASE_URL to kgserver_test; creates DB if absent;
+                             checks DBpedia reachability for SPARQL integration tests
+  test_engine.py           -- Unit tests for BFS traversal logic
+  test_server.py           -- Unit tests for MCP server tools
+  test_sparql.py           -- Unit tests for SparqlBackend (mocked HTTP, no network)
+  test_sparql_integration.py -- Integration tests against live DBpedia (skipped if unreachable)
+  test_postgres.py         -- Integration tests against live Postgres (skipped if DB unreachable)
 ```
 
 ## Build & Test Commands
@@ -54,6 +58,13 @@ uv run pytest tests/test_server.py -v
 # Start the MCP server (SSE transport, Postgres backend)
 uv run bfs-ql serve --backend postgres --transport sse \
   --description "My knowledge graph"
+
+# Start the MCP server against a SPARQL endpoint (e.g. DBpedia)
+uv run bfs-ql serve --backend sparql --transport sse \
+  --endpoint https://dbpedia.org/sparql \
+  --prefix DBpedia=http://dbpedia.org/resource/ \
+  --prefix DBpedia-owl=http://dbpedia.org/ontology/ \
+  --description "DBpedia: open encyclopedia knowledge graph"
 ```
 
 Requires `DATABASE_URL` env var for Postgres tests and server. Set it in `.env`

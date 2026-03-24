@@ -31,13 +31,38 @@ if _TEST_DSN:
     os.environ["DATABASE_URL"] = _TEST_DSN
 
 
+_SPARQL_ENDPOINT = os.environ.get("SPARQL_ENDPOINT_URL", "https://dbpedia.org/sparql")
+
+
 def pytest_collection_modifyitems(config, items):
-    """Skip Postgres tests if the test database is not reachable."""
+    """Skip integration tests when the required backend is not reachable."""
     pg_reachable = _check_pg(_TEST_DSN)
-    skip = pytest.mark.skip(reason="Postgres not reachable -- skipping integration tests")
+    sparql_reachable = _check_sparql(_SPARQL_ENDPOINT)
+
+    skip_pg = pytest.mark.skip(reason="Postgres not reachable -- skipping integration tests")
+    skip_sparql = pytest.mark.skip(reason="SPARQL endpoint not reachable -- skipping integration tests")
+
     for item in items:
         if "test_postgres" in item.nodeid and not pg_reachable:
-            item.add_marker(skip)
+            item.add_marker(skip_pg)
+        if "test_sparql_integration" in item.nodeid and not sparql_reachable:
+            item.add_marker(skip_sparql)
+
+
+def _check_sparql(endpoint: str) -> bool:
+    """Return True if the SPARQL endpoint responds to a lightweight ASK query."""
+    try:
+        import urllib.request
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            "query": "ASK { ?s ?p ?o }",
+            "format": "application/sparql-results+json",
+        })
+        url = f"{endpoint}?{params}"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def _check_pg(dsn: str | None) -> bool:

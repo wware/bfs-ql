@@ -1,11 +1,23 @@
-"""CLI entry point: bfs-ql serve --backend postgres"""
+"""CLI entry point: bfs-ql serve --backend (postgres|sparql)"""
 
 import argparse
-import asyncio
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _parse_prefix(value: str) -> tuple[str, str]:
+    """Parse a KEY=VALUE prefix argument into a (name, uri_base) tuple.
+
+    Example: 'DBpedia=http://dbpedia.org/resource/' -> ('DBpedia', 'http://dbpedia.org/resource/')
+    """
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(
+            f"--prefix must be in KEY=VALUE form, got: {value!r}"
+        )
+    key, uri_base = value.split("=", 1)
+    return key, uri_base
 
 
 def main():
@@ -18,7 +30,7 @@ def main():
     serve = subparsers.add_parser("serve", help="Start the MCP server.")
     serve.add_argument(
         "--backend",
-        choices=["postgres"],
+        choices=["postgres", "sparql"],
         default="postgres",
         help="Backend to connect to (default: postgres).",
     )
@@ -34,6 +46,39 @@ def main():
         help="Human-readable description of this graph, included in describe_schema().",
     )
 
+    # SPARQL-specific arguments
+    serve.add_argument(
+        "--endpoint",
+        default=None,
+        help=(
+            "SPARQL endpoint URL (required when --backend sparql). "
+            "Defaults to SPARQL_ENDPOINT_URL environment variable."
+        ),
+    )
+    serve.add_argument(
+        "--prefix",
+        dest="prefixes",
+        action="append",
+        type=_parse_prefix,
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "URI prefix mapping for ID compression, e.g. "
+            "'DBpedia=http://dbpedia.org/resource/'. "
+            "Repeatable; each --prefix adds one mapping."
+        ),
+    )
+    serve.add_argument(
+        "--no-safe-distinct",
+        dest="safe_distinct",
+        action="store_false",
+        default=True,
+        help=(
+            "Disable SELECT DISTINCT scans for entity_types() and predicates(). "
+            "Use on endpoints where even sampled scans time out."
+        ),
+    )
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -42,6 +87,19 @@ def main():
         if args.backend == "postgres":
             from bfsql.backends.postgres import PostgresBackend
             factory = PostgresBackend.create
+
+        elif args.backend == "sparql":
+            from bfsql.backends.sparql import SparqlBackend
+            prefixes = dict(args.prefixes)
+            safe_distinct = args.safe_distinct
+
+            async def factory():
+                return await SparqlBackend.create(
+                    endpoint=args.endpoint,
+                    prefixes=prefixes,
+                    safe_distinct=safe_distinct,
+                )
+
         else:
             raise ValueError(f"Unknown backend: {args.backend}")
 
