@@ -77,6 +77,13 @@ or the environment. Integration tests automatically use a `_test`-suffixed datab
 - **`prov:` provisional IDs**: Pipeline artifacts with no canonical meaning. The
   server instructs the LLM to treat them as anonymous placeholders.
 
+## Python coding plans
+
+- **Plan filenames** -- plans while in development will have filenames of the form
+  `PLAN[1-9][0-9]*\.md`.
+- **Readiness** -- a plan is **ready** if it is *clear*, *specific*, *actionable*,
+  and in a state where it can be executed with little or no supervision.
+
 ## Python and Testing Conventions
 
 - Use `uv run pytest` to run tests, `uv run bfs-ql` to run the CLI.
