@@ -56,6 +56,7 @@ class SparqlBackend(GraphDbInterface):
         restrict_to_prefixes: bool = False,
         request_delay: float = 0.0,
         node_batch_size: int = 10,
+        exclude_predicates: list[str] | None = None,
     ) -> None:
         self._endpoint = endpoint
         self._prefixes = prefixes or {}
@@ -69,6 +70,10 @@ class SparqlBackend(GraphDbInterface):
         self._restrict_to_prefixes = restrict_to_prefixes
         self._request_delay = request_delay
         self._node_batch_size = node_batch_size
+        # Expand after _prefixes is set
+        self._exclude_predicates: list[str] = [
+            self._expand(p) for p in (exclude_predicates or [])
+        ]
         self._session: aiohttp.ClientSession | None = None
 
     @classmethod
@@ -157,6 +162,17 @@ class SparqlBackend(GraphDbInterface):
         """Escape a string for safe interpolation into a SPARQL string literal."""
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
+    def _predicate_exclusion_filter(self, var: str = "?p") -> str:
+        """Return a SPARQL FILTER fragment excluding unwanted predicates.
+
+        Returns an empty string when no predicates are excluded.
+        When enabled, generates: && ?p NOT IN (<uri1>, <uri2>, ...)
+        """
+        if not self._exclude_predicates:
+            return ""
+        uris = ", ".join(f"<{uri}>" for uri in self._exclude_predicates)
+        return f" && {var} NOT IN ({uris})"
+
     def _namespace_filter(self, var: str = "?o") -> str:
         """Return a SPARQL FILTER clause fragment restricting var to known prefix bases.
 
@@ -223,10 +239,11 @@ LIMIT 20
         """
         uri = self._expand(entity_id)
         ns_filter = self._namespace_filter()
+        pred_filter = self._predicate_exclusion_filter()
         sparql = f"""
 SELECT ?p ?o WHERE {{
     <{uri}> ?p ?o .
-    FILTER(!isLiteral(?o) && !isBlank(?o){ns_filter})
+    FILTER(!isLiteral(?o) && !isBlank(?o){ns_filter}{pred_filter})
 }}
 LIMIT {self._edge_limit}
 """
@@ -250,10 +267,11 @@ LIMIT {self._edge_limit}
         """
         uri = self._expand(entity_id)
         ns_filter = self._namespace_filter(var="?s")
+        pred_filter = self._predicate_exclusion_filter()
         sparql = f"""
 SELECT ?s ?p WHERE {{
     ?s ?p <{uri}> .
-    FILTER(!isLiteral(?s) && !isBlank(?s){ns_filter})
+    FILTER(!isLiteral(?s) && !isBlank(?s){ns_filter}{pred_filter})
 }}
 LIMIT {self._edge_limit}
 """

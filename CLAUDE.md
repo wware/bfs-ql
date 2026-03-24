@@ -60,17 +60,21 @@ uv run bfs-ql serve --backend postgres --transport sse \
   --description "My knowledge graph"
 
 # Start the MCP server against a SPARQL endpoint (e.g. DBpedia)
-# --bif-contains    use Virtuoso bif:contains for fast full-text search
-# --max-concurrent  limit parallel requests to avoid 429 rate-limiting
-# --request-delay   sleep between requests (seconds) for polite endpoints
-# --node-batch-size entities per VALUES batch for type resolution (default 10)
-# --log-level DEBUG shows each SPARQL request/response in the terminal
+# --bif-contains       use Virtuoso bif:contains for fast full-text search
+# --max-concurrent     limit parallel requests to avoid 429 rate-limiting
+# --request-delay      sleep between requests (seconds) for polite endpoints
+# --node-batch-size    entities per VALUES batch for type resolution (default 10)
+# --exclude-predicate  drop high-fan-out noisy predicates from BFS traversal
+# --log-level DEBUG    shows each SPARQL request/response in the terminal
 uv run bfs-ql serve --backend sparql --transport sse \
   --bif-contains --max-concurrent 1 --request-delay 0.2 \
   --restrict-to-prefixes --log-level WARNING \
   --endpoint https://dbpedia.org/sparql \
   --prefix DBpedia=http://dbpedia.org/resource/ \
   --prefix DBpedia-owl=http://dbpedia.org/ontology/ \
+  --exclude-predicate DBpedia-owl:wikiPageWikiLink \
+  --exclude-predicate DBpedia-owl:wikiPageRedirects \
+  --exclude-predicate "http://dbpedia.org/property/wikiPageUsesTemplate" \
   --description "DBpedia: open encyclopedia knowledge graph"
 ```
 

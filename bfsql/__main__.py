@@ -109,6 +109,18 @@ def main():
         ),
     )
     serve.add_argument(
+        "--exclude-predicate",
+        dest="exclude_predicates",
+        action="append",
+        default=[],
+        metavar="URI_OR_PREFIX:LOCAL",
+        help=(
+            "Predicate URI or prefixed name to exclude from BFS edge traversal. "
+            "Repeatable. Use to suppress high-fan-out noisy predicates such as "
+            "DBpedia-owl:wikiPageWikiLink. Prefix expansion uses --prefix mappings."
+        ),
+    )
+    serve.add_argument(
         "--node-batch-size",
         dest="node_batch_size",
         type=int,
@@ -174,6 +186,7 @@ def main():
             restrict_to_prefixes = args.restrict_to_prefixes
             request_delay = args.request_delay
             node_batch_size = args.node_batch_size
+            exclude_predicates = args.exclude_predicates
 
             async def factory():
                 return await SparqlBackend.create(
@@ -185,6 +198,7 @@ def main():
                     restrict_to_prefixes=restrict_to_prefixes,
                     request_delay=request_delay,
                     node_batch_size=node_batch_size,
+                    exclude_predicates=exclude_predicates,
                 )
 
         else:
