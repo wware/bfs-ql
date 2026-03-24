@@ -31,12 +31,16 @@ bfsql/
   __main__.py     -- CLI entrypoint (bfs-ql serve)
   backends/
     postgres.py   -- PostgresBackend (asyncpg + pgvector)
+    sparql.py     -- SparqlBackend (aiohttp; any SPARQL 1.1 endpoint)
 
 tests/
-  conftest.py     -- Rewrites DATABASE_URL to kgserver_test; creates DB if absent
-  test_engine.py  -- Unit tests for BFS traversal logic
-  test_server.py  -- Unit tests for MCP server tools
-  test_postgres.py -- Integration tests against live Postgres (skipped if DB unreachable)
+  conftest.py              -- Rewrites DATABASE_URL to kgserver_test; creates DB if absent;
+                             checks DBpedia reachability for SPARQL integration tests
+  test_engine.py           -- Unit tests for BFS traversal logic
+  test_server.py           -- Unit tests for MCP server tools
+  test_sparql.py           -- Unit tests for SparqlBackend (mocked HTTP, no network)
+  test_sparql_integration.py -- Integration tests against live DBpedia (skipped if unreachable)
+  test_postgres.py         -- Integration tests against live Postgres (skipped if DB unreachable)
 ```
 
 ## Build & Test Commands
@@ -54,6 +58,24 @@ uv run pytest tests/test_server.py -v
 # Start the MCP server (SSE transport, Postgres backend)
 uv run bfs-ql serve --backend postgres --transport sse \
   --description "My knowledge graph"
+
+# Start the MCP server against a SPARQL endpoint (e.g. DBpedia)
+# --bif-contains       use Virtuoso bif:contains for fast full-text search
+# --max-concurrent     limit parallel requests to avoid 429 rate-limiting
+# --request-delay      sleep between requests (seconds) for polite endpoints
+# --node-batch-size    entities per VALUES batch for type resolution (default 10)
+# --exclude-predicate  drop high-fan-out noisy predicates from BFS traversal
+# --log-level DEBUG    shows each SPARQL request/response in the terminal
+uv run bfs-ql serve --backend sparql --transport sse \
+  --bif-contains --max-concurrent 1 --request-delay 0.2 \
+  --restrict-to-prefixes --log-level WARNING \
+  --endpoint https://dbpedia.org/sparql \
+  --prefix DBpedia=http://dbpedia.org/resource/ \
+  --prefix DBpedia-owl=http://dbpedia.org/ontology/ \
+  --exclude-predicate DBpedia-owl:wikiPageWikiLink \
+  --exclude-predicate DBpedia-owl:wikiPageRedirects \
+  --exclude-predicate "http://dbpedia.org/property/wikiPageUsesTemplate" \
+  --description "DBpedia: open encyclopedia knowledge graph"
 ```
 
 Requires `DATABASE_URL` env var for Postgres tests and server. Set it in `.env`
@@ -73,9 +95,62 @@ or the environment. Integration tests automatically use a `_test`-suffixed datab
   stubs preserving full topology. Filters control detail level, not presence.
 - **`topology_only=True`**: Suppresses all metadata, returning pure structural
   skeleton. Use as first move on large or unfamiliar graphs (~14K chars vs ~110K
-  for full metadata on a 2-hop medlit traversal).
+  for full metadata on a 2-hop medlit traversal). The flag is passed into
+  `BfsQuery` so the engine skips all `metadata_for_node` and `metadata_for_edge`
+  calls entirely -- not just stripped in the server layer.
+- **Batched node-type resolution**: `get_nodes_batch()` on the ABC has a default
+  sequential fallback but `SparqlBackend` overrides it with a single `VALUES`
+  query per batch (default 10 entities). `CachedGraphDb` overrides it to send
+  only uncached IDs to the backend batch. This reduces ~130 round-trips to ~13
+  for a typical 1-hop DBpedia query.
 - **`prov:` provisional IDs**: Pipeline artifacts with no canonical meaning. The
   server instructs the LLM to treat them as anonymous placeholders.
+
+## Python coding plans
+
+- **Plan filenames** -- plans while in development will have filenames of the form
+  `PLAN[1-9][0-9]*\.md`.
+- **Readiness** -- a plan is **ready** if it is *clear*, *specific*, *actionable*,
+  and in a state where it can be executed with little or no supervision.
+
+### Planning checklist for new backends or external integrations
+
+These items were identified as recurring sources of unplanned work. Run through
+them before finalising any plan that touches an external data source, transport
+layer, or third-party SDK.
+
+**Reconnaissance before design**
+- Run a handful of raw queries against the real endpoint before writing code.
+  Note rate limits, vendor-specific extensions (e.g. Virtuoso `bif:contains`),
+  and any surprising data quality issues. Do this before committing to an API
+  design.
+
+**End-to-end smoke test early**
+- Add an explicit milestone to verify the full client→server→tool→response
+  round-trip works before feature work begins, not after. Transport layers and
+  SDK versions have broken this silently (e.g. FastMCP 3.x `structuredContent`
+  causing `-32602` errors). Pin dependency versions at known-good values and
+  note the reason in `pyproject.toml`.
+
+**Estimate call counts, not just query complexity**
+- For any method called inside a BFS loop or `asyncio.gather`, estimate the
+  call count for a typical workload and ask whether that is acceptable. Note it
+  in the plan ("~N calls per BFS hop"). This is what surfaced the need for
+  `get_nodes_batch()` -- 130 sequential round-trips was predictable in advance.
+
+**Integration tests should probe scale and performance**
+- Tests against a real external service should include at least one test that
+  exercises a multi-hop BFS or high-fan-out seed and reports timing. Pass/fail
+  correctness checks alone do not surface rate limiting, fan-out, or latency
+  problems.
+
+**Plan for data quality gaps at public endpoints**
+- Public knowledge graphs (DBpedia, Wikidata, etc.) have missing triples,
+  inconsistent typing, and high-cardinality predicates. Explicitly design the
+  fallback for: entity with no `rdf:type`, entity with no label, predicate with
+  unexpectedly high fan-out. Do not leave these as runtime crashes to be
+  discovered mid-demo. (`get_node()` originally raised `KeyError` on missing
+  type; the right fallback is `owl:Thing`.)
 
 ## Python and Testing Conventions
 

@@ -32,10 +32,10 @@ async def server(mock_backend):
 
 async def _get_tool(mcp, name):
     """Retrieve a registered tool's underlying function by name."""
-    for tool in await mcp.list_tools():
-        if tool.name == name:
-            return tool.fn
-    raise KeyError(f"Tool {name!r} not found")
+    tools = await mcp.get_tools()
+    if name not in tools:
+        raise KeyError(f"Tool {name!r} not found")
+    return tools[name].fn
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +111,5 @@ async def test_describe_entity_missing(server):
 
 async def test_four_tools_registered(server):
     """Exactly four tools are registered."""
-    tools = await server.list_tools()
-    names = {t.name for t in tools}
-    assert names == {"describe_schema", "search_entities", "bfs_query", "describe_entity"}
+    tools = await server.get_tools()
+    assert set(tools.keys()) == {"describe_schema", "search_entities", "bfs_query", "describe_entity"}

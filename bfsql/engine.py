@@ -65,15 +65,24 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
         all_node_ids.add(edge.subject)
         all_node_ids.add(edge.object)
 
-    # Build node results concurrently
-    nodes = await asyncio.gather(
-        *[_build_node(db, nid, node_type_filter) for nid in all_node_ids]
-    )
+    # Fetch all node types in one batched call, then build node records.
+    # topology_only skips all metadata fetches entirely.
+    node_id_list = list(all_node_ids)
+    raw_nodes = await db.get_nodes_batch(node_id_list)
+    if query.topology_only:
+        nodes = [EntityStub(id=n.id, entity_type=n.entity_type) for n in raw_nodes]
+    else:
+        nodes = await asyncio.gather(
+            *[_apply_node_filter(db, n, node_type_filter) for n in raw_nodes]
+        )
 
-    # Build edge results concurrently
-    edges = await asyncio.gather(
-        *[_build_edge(db, edge, predicate_filter) for edge in all_edges]
-    )
+    # Build edge results concurrently (topology_only uses bare Edge stubs).
+    if query.topology_only:
+        edges = list(all_edges)
+    else:
+        edges = await asyncio.gather(
+            *[_build_edge(db, edge, predicate_filter) for edge in all_edges]
+        )
 
     return BfsResult(
         seeds=query.seeds,
@@ -85,15 +94,17 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
     )
 
 
-async def _build_node(
+async def _apply_node_filter(
     db: GraphDbInterface,
-    entity_id: str,
+    node: Node | EntityStub,
     node_type_filter: frozenset[str],
 ) -> Node | EntityStub:
-    """Return a full Node or an EntityStub depending on the filter."""
-    node = await db.get_node(entity_id)
+    """Return a full Node or an EntityStub depending on the filter.
+
+    The node's type is already known; this only fetches metadata when needed.
+    """
     if not node_type_filter or node.entity_type in node_type_filter:
-        metadata = await db.metadata_for_node(entity_id)
+        metadata = await db.metadata_for_node(node.id)
         return Node(id=node.id, entity_type=node.entity_type, metadata=metadata)
     return EntityStub(id=node.id, entity_type=node.entity_type)
 

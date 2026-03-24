@@ -58,6 +58,14 @@ class CachedGraphDb(GraphDbInterface):
             self._get_node_cache[entity_id] = await self._backend.get_node(entity_id)
         return self._get_node_cache[entity_id]
 
+    async def get_nodes_batch(self, entity_ids: list[str]) -> list[Node]:
+        uncached = [eid for eid in entity_ids if eid not in self._get_node_cache]
+        if uncached:
+            fetched = await self._backend.get_nodes_batch(uncached)
+            for node in fetched:
+                self._get_node_cache[node.id] = node
+        return [self._get_node_cache[eid] for eid in entity_ids]
+
     async def metadata_for_node(self, entity_id: str) -> dict[str, Any]:
         if entity_id not in self._node_meta_cache:
             self._node_meta_cache[entity_id] = await self._backend.metadata_for_node(entity_id)
