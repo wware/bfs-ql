@@ -60,7 +60,14 @@ uv run bfs-ql serve --backend postgres --transport sse \
   --description "My knowledge graph"
 
 # Start the MCP server against a SPARQL endpoint (e.g. DBpedia)
+# --bif-contains    use Virtuoso bif:contains for fast full-text search
+# --max-concurrent  limit parallel requests to avoid 429 rate-limiting
+# --request-delay   sleep between requests (seconds) for polite endpoints
+# --node-batch-size entities per VALUES batch for type resolution (default 10)
+# --log-level DEBUG shows each SPARQL request/response in the terminal
 uv run bfs-ql serve --backend sparql --transport sse \
+  --bif-contains --max-concurrent 1 --request-delay 0.2 \
+  --restrict-to-prefixes --log-level WARNING \
   --endpoint https://dbpedia.org/sparql \
   --prefix DBpedia=http://dbpedia.org/resource/ \
   --prefix DBpedia-owl=http://dbpedia.org/ontology/ \
@@ -84,7 +91,14 @@ or the environment. Integration tests automatically use a `_test`-suffixed datab
   stubs preserving full topology. Filters control detail level, not presence.
 - **`topology_only=True`**: Suppresses all metadata, returning pure structural
   skeleton. Use as first move on large or unfamiliar graphs (~14K chars vs ~110K
-  for full metadata on a 2-hop medlit traversal).
+  for full metadata on a 2-hop medlit traversal). The flag is passed into
+  `BfsQuery` so the engine skips all `metadata_for_node` and `metadata_for_edge`
+  calls entirely -- not just stripped in the server layer.
+- **Batched node-type resolution**: `get_nodes_batch()` on the ABC has a default
+  sequential fallback but `SparqlBackend` overrides it with a single `VALUES`
+  query per batch (default 10 entities). `CachedGraphDb` overrides it to send
+  only uncached IDs to the backend batch. This reduces ~130 round-trips to ~13
+  for a typical 1-hop DBpedia query.
 - **`prov:` provisional IDs**: Pipeline artifacts with no canonical meaning. The
   server instructs the LLM to treat them as anonymous placeholders.
 
