@@ -113,6 +113,45 @@ or the environment. Integration tests automatically use a `_test`-suffixed datab
 - **Readiness** -- a plan is **ready** if it is *clear*, *specific*, *actionable*,
   and in a state where it can be executed with little or no supervision.
 
+### Planning checklist for new backends or external integrations
+
+These items were identified as recurring sources of unplanned work. Run through
+them before finalising any plan that touches an external data source, transport
+layer, or third-party SDK.
+
+**Reconnaissance before design**
+- Run a handful of raw queries against the real endpoint before writing code.
+  Note rate limits, vendor-specific extensions (e.g. Virtuoso `bif:contains`),
+  and any surprising data quality issues. Do this before committing to an API
+  design.
+
+**End-to-end smoke test early**
+- Add an explicit milestone to verify the full client→server→tool→response
+  round-trip works before feature work begins, not after. Transport layers and
+  SDK versions have broken this silently (e.g. FastMCP 3.x `structuredContent`
+  causing `-32602` errors). Pin dependency versions at known-good values and
+  note the reason in `pyproject.toml`.
+
+**Estimate call counts, not just query complexity**
+- For any method called inside a BFS loop or `asyncio.gather`, estimate the
+  call count for a typical workload and ask whether that is acceptable. Note it
+  in the plan ("~N calls per BFS hop"). This is what surfaced the need for
+  `get_nodes_batch()` -- 130 sequential round-trips was predictable in advance.
+
+**Integration tests should probe scale and performance**
+- Tests against a real external service should include at least one test that
+  exercises a multi-hop BFS or high-fan-out seed and reports timing. Pass/fail
+  correctness checks alone do not surface rate limiting, fan-out, or latency
+  problems.
+
+**Plan for data quality gaps at public endpoints**
+- Public knowledge graphs (DBpedia, Wikidata, etc.) have missing triples,
+  inconsistent typing, and high-cardinality predicates. Explicitly design the
+  fallback for: entity with no `rdf:type`, entity with no label, predicate with
+  unexpectedly high fan-out. Do not leave these as runtime crashes to be
+  discovered mid-demo. (`get_node()` originally raised `KeyError` on missing
+  type; the right fallback is `owl:Thing`.)
+
 ## Python and Testing Conventions
 
 - Use `uv run pytest` to run tests, `uv run bfs-ql` to run the CLI.
