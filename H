@@ -1,0 +1,24 @@
+#!/bin/bash -xe
+
+# REQUEST_DELAY=0.5, works but SSSLLLLOOOOWWWW
+# 0.0 is no good, 429 rate-limiting
+REQUEST_DELAY=0.2
+MAX_CONCURRENT=1
+
+pkill -f "bfs-ql serve" || true
+
+sleep 1
+
+#uv run bfs-ql serve --backend sparql --transport sse --port 8001 \
+#    --bif-contains --max-concurrent ${MAX_CONCURRENT} --request-delay ${REQUEST_DELAY} \
+#    --restrict-to-prefixes --log-level DEBUG --endpoint https://dbpedia.org/sparql \
+#    --prefix DBpedia=http://dbpedia.org/resource/ \
+#    --prefix DBpedia-owl=http://dbpedia.org/ontology/ \
+#    --description "DBpedia: open encyclopedia knowledge graph derived from Wikipedia"
+
+uv run bfs-ql serve --backend sparql --transport sse --port 8001 \
+    --bif-contains --max-concurrent ${MAX_CONCURRENT} --request-delay ${REQUEST_DELAY} \
+    --restrict-to-prefixes --log-level DEBUG --endpoint https://dbpedia.org/sparql \
+    --prefix DBpedia=http://dbpedia.org/resource/ \
+    --prefix DBpedia-owl=http://dbpedia.org/ontology/ \
+    --description "DBpedia: open encyclopedia knowledge graph derived from Wikipedia"

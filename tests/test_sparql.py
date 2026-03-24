@@ -221,12 +221,13 @@ async def test_get_node():
     assert node.entity_type == TYPE_DRUG
 
 
-async def test_get_node_raises_key_error_on_empty():
-    """get_node raises KeyError when the entity has no rdf:type."""
+async def test_get_node_returns_owl_thing_on_empty():
+    """get_node returns owl:Thing entity_type when the entity has no rdf:type."""
     b = make_backend()
     patch_query(b, [])
-    with pytest.raises(KeyError):
-        await b.get_node(ID_DESMO)
+    node = await b.get_node(ID_DESMO)
+    assert node.id == ID_DESMO
+    assert node.entity_type == "owl:Thing"
 
 
 # ---------------------------------------------------------------------------

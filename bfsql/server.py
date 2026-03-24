@@ -148,6 +148,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             max_hops=max_hops,
             node_types=node_types or [],
             predicates=predicates or [],
+            topology_only=topology_only,
         ))
         return _slim_result(result, topology_only=topology_only)
 

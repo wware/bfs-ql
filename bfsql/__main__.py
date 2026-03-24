@@ -30,6 +30,13 @@ def main():
 
     serve = subparsers.add_parser("serve", help="Start the MCP server.")
     serve.add_argument(
+        "--log-level",
+        dest="log_level",
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level (default: WARNING). Use DEBUG to see all SPARQL requests.",
+    )
+    serve.add_argument(
         "--backend",
         choices=["postgres", "sparql"],
         default="postgres",
@@ -102,6 +109,16 @@ def main():
         ),
     )
     serve.add_argument(
+        "--node-batch-size",
+        dest="node_batch_size",
+        type=int,
+        default=10,
+        help=(
+            "Number of entities to fetch types for in a single VALUES query (default: 10). "
+            "Increase to reduce SPARQL round-trips; decrease if queries time out."
+        ),
+    )
+    serve.add_argument(
         "--request-delay",
         dest="request_delay",
         type=float,
@@ -136,6 +153,12 @@ def main():
     args = parser.parse_args()
 
     if args.command == "serve":
+        logging.basicConfig(
+            level=getattr(logging, args.log_level),
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+        logging.getLogger("docket").setLevel(logging.WARNING)
+
         from bfsql.server import create_server
 
         if args.backend == "postgres":
@@ -150,6 +173,7 @@ def main():
             max_concurrent = args.max_concurrent
             restrict_to_prefixes = args.restrict_to_prefixes
             request_delay = args.request_delay
+            node_batch_size = args.node_batch_size
 
             async def factory():
                 return await SparqlBackend.create(
@@ -160,6 +184,7 @@ def main():
                     max_concurrent=max_concurrent,
                     restrict_to_prefixes=restrict_to_prefixes,
                     request_delay=request_delay,
+                    node_batch_size=node_batch_size,
                 )
 
         else:

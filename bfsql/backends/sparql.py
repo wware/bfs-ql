@@ -55,6 +55,7 @@ class SparqlBackend(GraphDbInterface):
         max_concurrent: int = 5,
         restrict_to_prefixes: bool = False,
         request_delay: float = 0.0,
+        node_batch_size: int = 10,
     ) -> None:
         self._endpoint = endpoint
         self._prefixes = prefixes or {}
@@ -67,6 +68,7 @@ class SparqlBackend(GraphDbInterface):
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._restrict_to_prefixes = restrict_to_prefixes
         self._request_delay = request_delay
+        self._node_batch_size = node_batch_size
         self._session: aiohttp.ClientSession | None = None
 
     @classmethod
@@ -284,6 +286,37 @@ LIMIT 1
             return Node(id=entity_id, entity_type="owl:Thing")
         entity_type = self._compress(bindings[0]["type"]["value"])
         return Node(id=entity_id, entity_type=entity_type)
+
+    async def get_nodes_batch(self, entity_ids: list[str]) -> list[Node]:
+        """Fetch types for multiple entities in batched VALUES queries.
+
+        Splits entity_ids into chunks of node_batch_size and issues one
+        SPARQL query per chunk, returning one Node per input ID. Entities
+        with no rdf:type triple receive entity_type="owl:Thing".
+        """
+        type_map: dict[str, str] = {}
+        for i in range(0, len(entity_ids), self._node_batch_size):
+            chunk = entity_ids[i:i + self._node_batch_size]
+            values = " ".join(f"<{self._expand(eid)}>" for eid in chunk)
+            sparql = f"""
+SELECT ?entity ?type WHERE {{
+    VALUES ?entity {{ {values} }}
+    ?entity a ?type .
+}}
+"""
+            bindings = await self._query(sparql)
+            for b in bindings:
+                if b.get("entity", {}).get("type") != _URI:
+                    continue
+                if b.get("type", {}).get("type") != _URI:
+                    continue
+                entity_id = self._compress(b["entity"]["value"])
+                if entity_id not in type_map:
+                    type_map[entity_id] = self._compress(b["type"]["value"])
+        return [
+            Node(id=eid, entity_type=type_map.get(eid, "owl:Thing"))
+            for eid in entity_ids
+        ]
 
     async def metadata_for_node(self, entity_id: str) -> dict[str, Any]:
         """Return all literal-valued properties as a flat dict.

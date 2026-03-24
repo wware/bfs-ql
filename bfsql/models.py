@@ -71,6 +71,13 @@ class BfsQuery(BaseModel, frozen=True):
             "Non-matching edges appear as stubs. Omit to receive full data on all edges."
         ),
     )
+    topology_only: bool = Field(
+        default=False,
+        description=(
+            "If True, skip all metadata fetches. All nodes and edges are returned "
+            "as stubs (IDs and types only). Much faster for structural exploration."
+        ),
+    )
 
 
 class BfsResult(BaseModel, frozen=True):

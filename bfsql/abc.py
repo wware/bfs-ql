@@ -43,6 +43,14 @@ class GraphDbInterface(ABC):
         Raises KeyError if the entity does not exist.
         """
 
+    async def get_nodes_batch(self, entity_ids: list[str]) -> list[Node]:
+        """Return nodes for a batch of entity IDs.
+
+        Default implementation calls get_node() in sequence. Backends may
+        override this with a single batched query for better performance.
+        """
+        return [await self.get_node(eid) for eid in entity_ids]
+
     @abstractmethod
     async def metadata_for_node(self, entity_id: str) -> dict[str, Any]:
         """Return all available metadata for the given entity.
