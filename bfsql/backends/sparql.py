@@ -241,6 +241,8 @@ LIMIT {self._edge_limit}
         for b in bindings:
             if b.get("p", {}).get("type") != _URI:
                 continue
+            if b.get("o", {}).get("type") != _LITERAL:
+                continue
             pred_uri = b["p"]["value"]
             # Use local name: everything after the last # or /
             local = pred_uri.split("#")[-1].split("/")[-1]
