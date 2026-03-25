@@ -80,6 +80,17 @@ class BfsQuery(BaseModel, frozen=True):
     )
 
 
+class SchemaSummary(BaseModel, frozen=True):
+    """A summary of entity types and predicates found in a BFS result subgraph."""
+
+    entity_types_found: list[str] = Field(
+        description="Entity types present in this subgraph."
+    )
+    predicates_found: list[str] = Field(
+        description="Predicates present in this subgraph."
+    )
+
+
 class BfsResult(BaseModel, frozen=True):
     """The result of a BFS-QL query."""
 
@@ -99,6 +110,14 @@ class BfsResult(BaseModel, frozen=True):
             "predicates is empty) are EdgeWithMetadata records. Others are Edge stubs."
         )
     )
+    schema_summary: SchemaSummary = Field(
+        description=(
+            "Entity types and predicates actually present in this subgraph. "
+            "Always populated regardless of filters. Use this to discover valid "
+            "node_types and predicates values for follow-up queries, especially "
+            "when describe_schema returns comprehensive=False."
+        )
+    )
 
 
 class SchemaDescription(BaseModel, frozen=True):
@@ -107,9 +126,23 @@ class SchemaDescription(BaseModel, frozen=True):
     graph_description: str = Field(
         description="Human-readable description of the graph and its domain."
     )
+    comprehensive: bool = Field(
+        description=(
+            "True if entity_types and predicates are complete and exhaustive. "
+            "False if the graph is too large or open-world to enumerate fully -- "
+            "treat the lists as a sample only and rely on schema_summary in "
+            "bfs_query results to discover types and predicates."
+        )
+    )
     entity_types: list[str] = Field(
-        description="All valid entity type names in this graph."
+        description="Valid entity type names for use in bfs_query node_types filter."
     )
     predicates: list[str] = Field(
-        description="All valid predicate names in this graph."
+        description="Valid predicate names for use in bfs_query predicates filter."
+    )
+    next_steps: str = Field(
+        description=(
+            "Backend-authored instructions for how to proceed after describe_schema. "
+            "Follow these in preference to any generic default workflow."
+        )
     )

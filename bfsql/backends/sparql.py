@@ -417,3 +417,17 @@ LIMIT {self._predicate_limit}
             for b in bindings
             if b.get("pred", {}).get("type") == _URI
         ]
+
+    async def comprehensive(self) -> bool:
+        """SPARQL endpoints are open-world; the schema cannot be fully enumerated."""
+        return False
+
+    async def next_steps(self) -> str:
+        return (
+            "This is a large open-world graph. entity_types and predicates above are "
+            "a sample only. To explore: call search_entities() with a specific entity "
+            "name to get a canonical ID, then call bfs_query() with max_hops=1 and no "
+            "filters (or topology_only=True for a structural overview). Read the "
+            "schema_summary in the result to discover the types and predicates present "
+            "in that neighborhood, then use them as filter values in follow-up queries."
+        )

@@ -43,16 +43,18 @@ async def _get_tool(mcp, name):
 # ---------------------------------------------------------------------------
 
 async def test_describe_schema(server, mock_backend):
-    """describe_schema returns entity types and predicates from the backend."""
-    # Prime the cache by calling entity_types/predicates directly
+    """describe_schema returns entity types, predicates, comprehensive flag, and next_steps."""
     await mock_backend.entity_types()
     await mock_backend.predicates()
 
-    fn = await _get_tool(server,"describe_schema")
+    fn = await _get_tool(server, "describe_schema")
     result = await fn()
     assert set(result["entity_types"]) == {"Drug", "Disease", "Gene"}
     assert "TREATS" in result["predicates"]
     assert result["graph_description"] == "Test graph."
+    assert isinstance(result["comprehensive"], bool)
+    assert isinstance(result["next_steps"], str)
+    assert len(result["next_steps"]) > 0
 
 
 async def test_search_entities(server):
@@ -63,12 +65,34 @@ async def test_search_entities(server):
 
 
 async def test_bfs_query_basic(server):
-    fn = await _get_tool(server,"bfs_query")
+    fn = await _get_tool(server, "bfs_query")
     result = await fn(seeds=["Drug:A"], max_hops=1)
     node_ids = {n["id"] for n in result["nodes"]}
     assert "Drug:A" in node_ids
     assert "Disease:B" in node_ids
     assert "Gene:C" in node_ids
+
+
+async def test_bfs_query_schema_summary(server):
+    """bfs_query always includes schema_summary with types and predicates found."""
+    fn = await _get_tool(server, "bfs_query")
+    result = await fn(seeds=["Drug:A"], max_hops=1)
+    summary = result.get("schema_summary")
+    assert summary is not None
+    assert "entity_types_found" in summary
+    assert "predicates_found" in summary
+    assert "Drug" in summary["entity_types_found"]
+    assert "TREATS" in summary["predicates_found"]
+
+
+async def test_bfs_query_schema_summary_topology_only(server):
+    """schema_summary is present even when topology_only=True."""
+    fn = await _get_tool(server, "bfs_query")
+    result = await fn(seeds=["Drug:A"], max_hops=1, topology_only=True)
+    summary = result.get("schema_summary")
+    assert summary is not None
+    assert "entity_types_found" in summary
+    assert "predicates_found" in summary
 
 
 async def test_bfs_query_with_filters(server):

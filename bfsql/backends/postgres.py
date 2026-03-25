@@ -231,6 +231,17 @@ class PostgresBackend(GraphDbInterface):
             )
         return [r["predicate"] for r in rows]
 
+    async def comprehensive(self) -> bool:
+        """Postgres graphs have a complete, enumerable schema."""
+        return True
+
+    async def next_steps(self) -> str:
+        return (
+            "Call search_entities() to resolve entity names to canonical IDs, "
+            "then bfs_query() starting at max_hops=1. Use the entity_types and "
+            "predicates lists from describe_schema as valid filter values."
+        )
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

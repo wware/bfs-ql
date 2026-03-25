@@ -24,7 +24,7 @@ The companion book is at `~/bfs-ql-book`. The companion kgraph pipeline is at
 bfsql/
   abc.py          -- GraphDbInterface ABC (8 abstract methods)
   models.py       -- Pydantic models: EntityStub, Node, Edge, EdgeWithMetadata,
-                     BfsQuery, BfsResult, SchemaDescription
+                     BfsQuery, SchemaSummary, BfsResult, SchemaDescription
   engine.py       -- BFS traversal engine (bfs_query function)
   cache.py        -- CachedGraphDb wrapper
   server.py       -- FastMCP server (create_server, _slim_result, tool definitions)

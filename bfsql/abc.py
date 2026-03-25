@@ -84,3 +84,25 @@ class GraphDbInterface(ABC):
         Results are stable for the lifetime of a session. The server caches
         this call; backends need not cache it themselves.
         """
+
+    async def comprehensive(self) -> bool:
+        """Return True if entity_types() and predicates() are exhaustive.
+
+        Override to return False for large open-world graphs (e.g. public
+        SPARQL endpoints) where the vocabulary cannot be fully enumerated.
+        Default is True (safe assumption for small, well-defined schemas).
+        """
+        return True
+
+    async def next_steps(self) -> str:
+        """Return backend-authored workflow instructions for the LLM.
+
+        Called after describe_schema() to tell the LLM how to proceed.
+        Override to provide graph-specific guidance. Default gives the
+        standard comprehensive-graph workflow.
+        """
+        return (
+            "Call search_entities() to resolve entity names to canonical IDs, "
+            "then bfs_query() starting at max_hops=1. Use the entity_types and "
+            "predicates lists from describe_schema as valid filter values."
+        )

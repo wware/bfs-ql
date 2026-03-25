@@ -11,6 +11,7 @@ from bfsql.models import (
     EdgeWithMetadata,
     EntityStub,
     Node,
+    SchemaSummary,
 )
 
 
@@ -84,13 +85,20 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
             *[_build_edge(db, edge, predicate_filter) for edge in all_edges]
         )
 
+    node_list = list(nodes)
+    edge_list = list(edges)
+    schema_summary = SchemaSummary(
+        entity_types_found=sorted({n.entity_type for n in node_list}),
+        predicates_found=sorted({e.predicate for e in edge_list}),
+    )
     return BfsResult(
         seeds=query.seeds,
         max_hops=query.max_hops,
-        node_count=len(nodes),
-        edge_count=len(edges),
-        nodes=list(nodes),
-        edges=list(edges),
+        node_count=len(node_list),
+        edge_count=len(edge_list),
+        nodes=node_list,
+        edges=edge_list,
+        schema_summary=schema_summary,
     )
 
 

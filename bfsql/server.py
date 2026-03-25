@@ -7,7 +7,7 @@ from fastmcp import FastMCP
 
 from bfsql.cache import CachedGraphDb
 from bfsql.engine import bfs_query as _bfs_query
-from bfsql.models import BfsQuery, BfsResult, SchemaDescription
+from bfsql.models import BfsQuery, BfsResult, SchemaSummary, SchemaDescription
 
 
 # Schema injection threshold: if the graph has more entity types or
@@ -70,17 +70,19 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     # Tool: describe_schema
     # ------------------------------------------------------------------
 
-    @mcp.tool(description="Return the entity types, predicate vocabulary, and "
-              "description of this graph. Call this first against an unfamiliar graph. "
-              "The returned entity_types list is the complete set of valid node_types "
-              "values for bfs_query. Entity counts per type are not exposed directly -- "
-              "use bfs_query with a well-connected seed to explore coverage.")
+    @mcp.tool(description="Return schema information for this graph. Always call this "
+              "first. Follow the next_steps field for graph-specific workflow guidance. "
+              "When comprehensive=False, entity_types and predicates are a sample only; "
+              "use schema_summary in bfs_query results to discover the local vocabulary.")
     async def describe_schema() -> dict:
         """Return schema information for this graph."""
+        db = _db()
         return SchemaDescription(
             graph_description=_state["graph_description"],
-            entity_types=await _db().entity_types(),
-            predicates=await _db().predicates(),
+            comprehensive=await db.comprehensive(),
+            entity_types=await db.entity_types(),
+            predicates=await db.predicates(),
+            next_steps=await db.next_steps(),
         ).model_dump()
 
     # ------------------------------------------------------------------
@@ -206,6 +208,8 @@ def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
     Otherwise, verbose edge fields (provenance text, quotes, timestamps) are
     stripped while confidence and source_documents are kept. Full provenance
     is available via describe_entity().
+
+    schema_summary is always included regardless of topology_only or filters.
     """
     data = result.model_dump()
     if topology_only:
@@ -223,20 +227,32 @@ def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
             if isinstance(meta, dict):
                 for key in _EDGE_META_STRIP:
                     meta.pop(key, None)
+    data["schema_summary"] = _build_schema_summary(result).model_dump()
     return data
+
+
+def _build_schema_summary(result: BfsResult) -> SchemaSummary:
+    """Derive a SchemaSummary from the nodes and edges in a BfsResult."""
+    entity_types = sorted({n.entity_type for n in result.nodes})
+    predicates = sorted({e.predicate for e in result.edges})
+    return SchemaSummary(entity_types_found=entity_types, predicates_found=predicates)
 
 
 def _server_instructions() -> str:
     return (
         "This MCP server exposes a knowledge graph via BFS-QL. "
-        "Recommended workflow: "
-        "1) Call describe_schema() to learn entity types, predicates, and graph description. "
+        "Recommended workflow: 1) Call describe_schema() to learn entity types, predicates, and graph description. "
+        "Read the next_steps field -- it contains backend-specific instructions for how to proceed; follow those "
+        "in preference to any generic guidance. "
         "2) Call search_entities(name) with a specific entity name (not a type) to resolve "
         "it to a canonical ID. Inspect entity_type in results to pick the right match. "
         "3) Call bfs_query(seeds, max_hops, node_types, predicates) to traverse the graph. "
         "Start with max_hops=1 and expand if needed. Use node_types and predicates to focus "
         "on the relevant parts of the graph -- non-matching nodes still appear as stubs so "
         "topology is always complete. "
+        "Each bfs_query result includes a schema_summary listing the entity types and predicates "
+        "actually found in that subgraph -- use these as filter values in follow-up queries, "
+        "especially when describe_schema returns comprehensive=False. "
         "4) Call describe_entity(id) on any stub node that warrants closer inspection. "
         "Important: search_entities searches entity names, not entity types. To find all "
         "entities of a given type, use bfs_query from a relevant seed with node_types filter. "
