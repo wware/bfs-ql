@@ -38,7 +38,7 @@ def main():
     )
     serve.add_argument(
         "--backend",
-        choices=["postgres", "sparql"],
+        choices=["postgres", "sparql", "neo4j"],
         default="postgres",
         help="Backend to connect to (default: postgres).",
     )
@@ -200,6 +200,10 @@ def main():
                     node_batch_size=node_batch_size,
                     exclude_predicates=exclude_predicates,
                 )
+
+        elif args.backend == "neo4j":
+            from bfsql.backends.neo4j import Neo4jBackend
+            factory = Neo4jBackend.create
 
         else:
             raise ValueError(f"Unknown backend: {args.backend}")

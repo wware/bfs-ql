@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__bfs-ql__search_entities",
+      "mcp__bfs-ql__bfs_query",
+      "mcp__bfs-ql__describe_schema",
+      "mcp__bfs-ql__describe_entity",
+      "mcp__dbpedia__bfs_query",
+      "mcp__dbpedia__describe_entity",
+      "mcp__dbpedia__search_entities",
+      "Bash(jq:*)",
+      "Bash(uv run:*)",
+      "Bash(uv pip:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
