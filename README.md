@@ -1,13 +1,13 @@
 # bfs-ql
 
 A Python implementation of the BFS-QL graph query protocol for language
-models. Exposes any supported knowledge graph as four MCP tools that an
+models. Exposes any supported knowledge graph as five MCP tools that an
 LLM can use to traverse and reason over structured knowledge -- without
 writing SPARQL or Cypher.
 
 ## What It Does
 
-BFS-QL turns a knowledge graph into an MCP server with four tools:
+BFS-QL turns a knowledge graph into an MCP server with five tools:
 
 - **`describe_schema()`** -- returns entity types, predicate vocabulary, and
   a human-readable description of the graph. Call this first against an
@@ -20,6 +20,10 @@ BFS-QL turns a knowledge graph into an MCP server with four tools:
   the LLM always sees an accurate picture of the graph's topology.
 - **`describe_entity(id)`** -- retrieves full metadata for a single entity
   by canonical ID. Use this to expand a stub.
+- **`intersect_subgraphs(seeds, k)`** -- returns the nodes within k
+  undirected hops of ALL given seeds. Useful for finding shared context
+  between multiple entities (e.g. common co-stars, shared diseases,
+  overlapping pathways).
 
 ## Installation
 
@@ -27,7 +31,7 @@ BFS-QL turns a knowledge graph into an MCP server with four tools:
 uv venv
 uv pip install -e ".[dev]"
 cp .env.example .env
-# edit .env to set DATABASE_URL
+# edit .env to set DATABASE_URL (Postgres backend) or SPARQL_ENDPOINT_URL
 ```
 
 ## Quickstart
@@ -36,6 +40,16 @@ cp .env.example .env
 # Start the MCP server in SSE mode against a Postgres/pgvector backend
 cd ~/bfs-ql
 uv run bfs-ql serve --backend postgres --transport sse --description "Biomedical literature graph"
+
+# Or against a SPARQL endpoint (e.g. DBpedia)
+uv run bfs-ql serve --backend sparql --transport sse \
+  --endpoint https://dbpedia.org/sparql \
+  --prefix DBpedia=http://dbpedia.org/resource/ \
+  --description "DBpedia knowledge graph"
+
+# Or against a Neo4j instance
+uv run bfs-ql serve --backend neo4j --transport sse \
+  --description "My property graph"
 ```
 
 Register with Claude Code (one-time):
@@ -44,10 +58,10 @@ Register with Claude Code (one-time):
 claude mcp add --transport sse --scope user bfs-ql http://127.0.0.1:8000/sse
 ```
 
-Start a new Claude Code session -- the four tools are immediately available.
+Start a new Claude Code session -- the five tools are immediately available.
 For other MCP clients (Cursor, etc.) point them at `http://127.0.0.1:8000/sse`.
 
-Once connected, the LLM has four tools. A typical session looks like this:
+A typical session looks like this:
 
 ```
 # 1. Orient
@@ -71,18 +85,30 @@ bfs_query(
 # 4. Drill into a stub
 describe_entity("MeSH:D049970")
 → full metadata for that entity
+
+# 5. Find shared context between two entities
+intersect_subgraphs(seeds=["MeSH:D003480", "MeSH:D006965"], k=2)
+→ nodes within 2 hops of both seeds
 ```
 
 ## Configuration
 
 Database connection is read from the environment. Copy `.env.example` to
-`.env` and set:
+`.env` and set the appropriate variables for your backend:
 
 ```
+# Postgres backend
 DATABASE_URL=postgresql://user:password@localhost:5432/mydb
+
+# Neo4j backend
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=secret
+NEO4J_DATABASE=neo4j          # optional, defaults to neo4j
+NEO4J_ID_PROPERTY=id          # optional; pipe-separated for fallback: title|name
 ```
 
-The server reads this at startup via `python-dotenv`.
+The server reads these at startup via `python-dotenv`.
 
 ## Architecture
 
@@ -120,9 +146,10 @@ class GraphDbInterface(ABC):
 ```
 
 All BFS-QL intelligence -- traversal, stub/full filtering, multi-seed union,
-context-window management -- is implemented once in the server layer in terms
-of these eight primitives. Backend implementors answer only one question: how
-do I perform basic graph navigation against this particular store?
+intersection, context-window management -- is implemented once in the server
+layer in terms of these eight primitives. Backend implementors answer only
+one question: how do I perform basic graph navigation against this particular
+store?
 
 ### The Caching Layer
 
@@ -152,49 +179,33 @@ vector similarity search (`ORDER BY embedding <=> $1 LIMIT k`).
 Requires a Postgres database with pgvector and a schema compatible with
 kgraph's entity/relationship tables. Set `DATABASE_URL` in `.env`.
 
-### Future Backends
+### `SparqlBackend` (any SPARQL 1.1 endpoint)
 
-- `SparqlBackend` -- any SPARQL 1.1 endpoint (DBpedia, Wikidata, Fuseki,
-  Virtuoso, GraphDB, Neptune)
-- `Neo4jBackend` -- property graphs via the official Neo4j Python driver
+Works against DBpedia, Wikidata, Fuseki, Virtuoso, GraphDB, Neptune, or
+any other SPARQL 1.1-compliant endpoint. URIs are compressed to compact
+canonical IDs via a caller-supplied prefix map.
 
-## Implementation Status
+Key CLI flags:
+- `--endpoint URL` -- SPARQL endpoint URL
+- `--prefix NAME=URI` -- register a URI prefix for ID compression (repeatable)
+- `--bif-contains` -- use Virtuoso `bif:contains` for full-text search
+- `--max-concurrent N` -- limit parallel requests (default unlimited)
+- `--request-delay SECS` -- sleep between requests for polite endpoints
+- `--exclude-predicate P` -- drop high-fan-out predicates from BFS traversal
+- `--node-batch-size N` -- entities per VALUES batch for type resolution (default 10)
+- `--restrict-to-prefixes` -- skip entities outside registered prefixes
 
-### Phase 1 -- Core abstractions ✓
+### `Neo4jBackend` (Neo4j 5)
 
-- [x] `bfsql/models.py` -- Pydantic models: `EntityStub`, `Node`, `Edge`,
-  `BfsQuery`, `BfsResult`, `SchemaDescription`
-- [x] `bfsql/abc.py` -- `GraphDbInterface` ABC
-- [x] `bfsql/cache.py` -- `CachedGraphDb` wrapper
-- [x] `bfsql/engine.py` -- BFS traversal engine: multi-seed expansion,
-  stub/full filtering, result assembly
-- [x] 8 engine tests against a mock backend
+Async Neo4j backend via the official Python driver. Full-text search uses
+a `entity_name_index` FULLTEXT index when present, with a CONTAINS scan
+fallback.
 
-### Phase 2 -- Postgres backend ✓
-
-- [x] `bfsql/backends/postgres.py` -- `PostgresBackend` implementation
-- [x] `.env.example` with `DATABASE_URL` placeholder
-- [x] 12 integration tests (skip cleanly when Postgres unavailable)
-
-### Phase 3 -- MCP server ✓
-
-- [x] `bfsql/server.py` -- FastMCP server with four tools and schema injection
-- [x] `bfsql/__main__.py` -- CLI entry point
-- [x] 7 server tests via direct tool function calls
-
-### Phase 4 -- Packaging and docs ✓
-
-- [x] `pyproject.toml` with metadata, classifiers, URLs
-- [x] `.env.example`
-- [x] Docstrings on all public interfaces
-- [x] Usage examples in this README
-
-### Roadmap
-
-- [ ] `SparqlBackend` -- any SPARQL 1.1 endpoint
-- [ ] `Neo4jBackend` -- property graphs via Neo4j Python driver
-- [ ] Migration script / schema docs for the Postgres backend
-- [ ] `bfs-ql serve --transport sse` with a printed MCP URL
+The `id_property` setting (env `NEO4J_ID_PROPERTY`) accepts a
+pipe-separated fallback list for graphs with heterogeneous key properties:
+`"title|name"` generates `coalesce(n.title, n.name)` in Cypher, allowing
+a single backend instance to handle graphs like the Neo4j Movies dataset
+where movies use `title` and persons use `name`.
 
 ## Project Layout
 
@@ -205,17 +216,22 @@ bfs-ql/
 │   ├── __main__.py         # CLI entry point: bfs-ql serve
 │   ├── abc.py              # GraphDbInterface ABC (eight methods)
 │   ├── cache.py            # CachedGraphDb -- primitive-level LRU cache
-│   ├── engine.py           # BFS traversal engine
+│   ├── engine.py           # BFS traversal engine + neighborhood_intersection
 │   ├── models.py           # Pydantic models (frozen)
-│   ├── server.py           # FastMCP server -- four tools
+│   ├── server.py           # FastMCP server -- five tools
 │   └── backends/
 │       ├── __init__.py
-│       └── postgres.py     # PostgresBackend (kgraph schema)
+│       ├── postgres.py     # PostgresBackend (kgraph schema)
+│       ├── sparql.py       # SparqlBackend (aiohttp; any SPARQL 1.1 endpoint)
+│       └── neo4j.py        # Neo4jBackend (neo4j async driver)
 ├── tests/
-│   ├── conftest.py         # Postgres connectivity check, skip logic
-│   ├── test_engine.py      # 8 tests, mock backend
-│   ├── test_postgres.py    # 12 integration tests, real Postgres
-│   └── test_server.py      # 7 tests, direct tool calls
+│   ├── conftest.py         # Connectivity checks and skip logic
+│   ├── test_engine.py      # Unit tests, mock backend
+│   ├── test_server.py      # Unit tests, direct tool calls
+│   ├── test_sparql.py      # SparqlBackend unit tests (mocked HTTP)
+│   ├── test_sparql_integration.py  # DBpedia integration (disabled)
+│   ├── test_postgres.py    # Postgres integration (skip if unavailable)
+│   └── test_neo4j.py       # Neo4j integration (skip if unavailable)
 ├── .env.example
 ├── pyproject.toml
 └── README.md
@@ -233,19 +249,19 @@ edge carries only `subject`, `predicate`, and `object`. The LLM sees the
 full topology of the subgraph without paying the context cost of full
 metadata everywhere.
 
+**`topology_only=True` is cheap.** Skips all metadata fetches in the engine
+entirely -- not just stripped at the server layer. Use as a first move on
+large or unfamiliar graphs (~14K chars vs ~110K for full metadata on a
+2-hop traversal).
+
 **Primitive-level caching.** The cache wraps the backend, not the query.
 This means any two BFS traversals that touch the same node share cached
 primitive results, even if they were issued with different filters or seeds.
 
 **Async by default.** Backend methods are async. The BFS engine issues
 `edges_from` and `metadata_for_node` calls concurrently during expansion,
-which matters for I/O-bound backends (Postgres, SPARQL endpoints).
+which matters for I/O-bound backends (Postgres, SPARQL endpoints, Neo4j).
 
-## Relationship to the Book
-
-This library is the implementation described in *BFS-QL: A Graph Query
-Protocol for Language Models* (Graphwright Publications). The
-`PostgresBackend` is the coupling point with the companion library
-[kgraph](https://github.com/wware/kgraph): kgraph writes entity embeddings
-and relationship records; bfs-ql reads them through the eight-method
-interface.
+**Intersection is backend-agnostic.** `intersect_subgraphs` is implemented
+purely in the engine layer against the eight-method ABC. It works with all
+backends with no backend changes required.
