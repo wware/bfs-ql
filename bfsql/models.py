@@ -120,6 +120,20 @@ class BfsResult(BaseModel, frozen=True):
     )
 
 
+class IntersectionResult(BaseModel, frozen=True):
+    """Result of a subgraph intersection query."""
+
+    seeds: list[str] = Field(description="The seed IDs used in this query.")
+    k: int = Field(description="The hop radius used.")
+    node_count: int = Field(description="Number of nodes in the intersection.")
+    nodes: list[EntityStub] = Field(
+        description=(
+            "Nodes within k undirected hops of every seed. "
+            "Includes the seeds themselves if they are mutually reachable."
+        )
+    )
+
+
 class SchemaDescription(BaseModel, frozen=True):
     """The schema of a graph, returned by describe_schema."""
 

@@ -7,7 +7,8 @@ from fastmcp import FastMCP
 
 from bfsql.cache import CachedGraphDb
 from bfsql.engine import bfs_query as _bfs_query
-from bfsql.models import BfsQuery, BfsResult, SchemaSummary, SchemaDescription
+from bfsql.engine import neighborhood_intersection as _neighborhood_intersection
+from bfsql.models import BfsQuery, BfsResult, IntersectionResult, SchemaSummary, SchemaDescription
 
 
 # Schema injection threshold: if the graph has more entity types or
@@ -153,6 +154,37 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             topology_only=topology_only,
         ))
         return _slim_result(result, topology_only=topology_only)
+
+    # ------------------------------------------------------------------
+    # Tool: intersect_subgraphs
+    # ------------------------------------------------------------------
+
+    @mcp.tool(description=(
+        "Return nodes that are within k hops of ALL given seeds (intersection "
+        "of k-hop neighborhoods). Edges are treated as undirected. Use this to "
+        "answer questions like 'what actors appeared in movies with both Tom Hanks "
+        "and Meg Ryan?' (seeds=[Tom Hanks, Meg Ryan], k=2) or 'what concepts are "
+        "near all of these entities?'. Returns a flat list of entity stubs -- "
+        "call describe_entity() on any result for full metadata."
+    ))
+    async def intersect_subgraphs(seeds: list[str], k: int) -> dict:
+        """Find nodes within k undirected hops of every seed.
+
+        Args:
+            seeds: Two or more canonical entity IDs.
+            k: Hop radius (1-5). All seeds must reach the result nodes
+               within this many hops treating edges as undirected.
+
+        Returns:
+            IntersectionResult with the list of nodes in the intersection.
+        """
+        nodes = await _neighborhood_intersection(_db(), seeds, k)
+        return IntersectionResult(
+            seeds=seeds,
+            k=k,
+            node_count=len(nodes),
+            nodes=nodes,
+        ).model_dump()
 
     # ------------------------------------------------------------------
     # Tool: describe_entity

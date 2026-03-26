@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from bfsql.abc import GraphDbInterface
-from bfsql.engine import bfs_query
+from bfsql.engine import bfs_query, neighborhood_intersection
 from bfsql.models import (
     BfsQuery,
     BfsResult,
@@ -210,3 +210,97 @@ async def test_seeds_always_present(db):
         seeds=["Disease:D"], max_hops=1, node_types=["Drug"]
     ))
     assert "Disease:D" in node_ids(result)
+
+
+# ---------------------------------------------------------------------------
+# neighborhood_intersection tests
+#
+# Graph recap (undirected traversal):
+#   Drug:A -- Disease:B  (via TREATS)
+#   Drug:A -- Gene:C     (via INHIBITS)
+#   Gene:C -- Disease:B  (via ASSOCIATED_WITH)
+#   Disease:B -- Disease:D (via COMORBID_WITH)
+#
+# Undirected adjacency:
+#   Drug:A:    {Disease:B, Gene:C}
+#   Disease:B: {Drug:A, Gene:C, Disease:D}
+#   Gene:C:    {Drug:A, Disease:B}
+#   Disease:D: {Disease:B}
+# ---------------------------------------------------------------------------
+
+async def test_intersection_two_seeds_k1(db):
+    """Nodes within 1 hop of both Drug:A and Gene:C.
+
+    1-hop of Drug:A:    {Drug:A, Disease:B, Gene:C}
+    1-hop of Gene:C:    {Gene:C, Drug:A, Disease:B}
+    intersection:       {Drug:A, Disease:B, Gene:C}
+    """
+    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=1)
+    ids = {n.id for n in result}
+    assert ids == {"Drug:A", "Disease:B", "Gene:C"}
+
+
+async def test_intersection_two_seeds_k1_disease_d_excluded(db):
+    """Disease:D is 2 hops from Drug:A and 2 hops from Gene:C, excluded at k=1."""
+    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=1)
+    ids = {n.id for n in result}
+    assert "Disease:D" not in ids
+
+
+async def test_intersection_two_seeds_k2_includes_disease_d(db):
+    """At k=2, Disease:D is reachable from both Drug:A and Gene:C.
+
+    2-hop of Drug:A:    {Drug:A, Disease:B, Gene:C, Disease:D}
+    2-hop of Gene:C:    {Gene:C, Drug:A, Disease:B, Disease:D}
+    intersection:       all four nodes
+    """
+    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=2)
+    ids = {n.id for n in result}
+    assert "Disease:D" in ids
+    assert ids == {"Drug:A", "Disease:B", "Gene:C", "Disease:D"}
+
+
+async def test_intersection_distant_seeds_k1_empty(db):
+    """Drug:A and Disease:D are 2 hops apart; no common 1-hop neighbors.
+
+    1-hop of Drug:A:    {Drug:A, Disease:B, Gene:C}
+    1-hop of Disease:D: {Disease:D, Disease:B}
+    intersection:       {Disease:B}
+    """
+    result = await neighborhood_intersection(db, ["Drug:A", "Disease:D"], k=1)
+    ids = {n.id for n in result}
+    assert ids == {"Disease:B"}
+
+
+async def test_intersection_single_seed(db):
+    """Single seed returns its own k-hop neighborhood."""
+    result = await neighborhood_intersection(db, ["Drug:A"], k=1)
+    ids = {n.id for n in result}
+    assert ids == {"Drug:A", "Disease:B", "Gene:C"}
+
+
+async def test_intersection_empty_seeds(db):
+    """Empty seeds list returns empty."""
+    result = await neighborhood_intersection(db, [], k=2)
+    assert result == []
+
+
+async def test_intersection_missing_seed(db):
+    """A missing seed causes empty result."""
+    result = await neighborhood_intersection(db, ["Drug:A", "NoSuch:X"], k=2)
+    assert result == []
+
+
+async def test_intersection_same_seed_twice(db):
+    """Duplicate seeds are redundant but valid."""
+    result = await neighborhood_intersection(db, ["Drug:A", "Drug:A"], k=1)
+    ids = {n.id for n in result}
+    assert ids == {"Drug:A", "Disease:B", "Gene:C"}
+
+
+async def test_intersection_returns_entity_stubs(db):
+    """Result nodes are EntityStub records (no metadata fetched)."""
+    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=1)
+    for node in result:
+        assert isinstance(node, EntityStub)
+        assert node.entity_type  # type is populated

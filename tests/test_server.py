@@ -133,7 +133,10 @@ async def test_describe_entity_missing(server):
         await fn(id="NoSuch:X")
 
 
-async def test_four_tools_registered(server):
-    """Exactly four tools are registered."""
+async def test_five_tools_registered(server):
+    """Exactly five tools are registered."""
     tools = await server.get_tools()
-    assert set(tools.keys()) == {"describe_schema", "search_entities", "bfs_query", "describe_entity"}
+    assert set(tools.keys()) == {
+        "describe_schema", "search_entities", "bfs_query",
+        "describe_entity", "intersect_subgraphs",
+    }
