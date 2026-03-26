@@ -162,6 +162,22 @@ layer, or third-party SDK.
 - pytest-asyncio in `auto` mode with session-scoped event loops (set in
   `pyproject.toml`) -- required for asyncpg pool sharing across tests.
 
+## Changelog
+
+`CHANGELOG.md` should be kept up to date as features are added. Update it
+when committing non-trivial work -- not necessarily every commit, but at
+least whenever a feature, fix, or notable change lands.
+
+**Format**: group entries under date-based headings (e.g. `## Unreleased
+(2026-03-26)`) rather than commit SHAs or version tags. This survives branch
+merges and commit squashes cleanly. When a release is tagged, rename the
+`Unreleased` heading to the version number.
+
+**What to include**: new features, changed behaviour, bug fixes, new
+backends, new CLI flags, new models, new tools, and dependency changes.
+Skip purely internal churn (formatting passes, doc tweaks, `.gitignore`
+changes).
+
 ## Demo Data
 
 See `DEMO_DATA.md` for instructions on loading the medlit demo dataset (36 PubMed
