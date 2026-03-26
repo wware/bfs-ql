@@ -26,37 +26,63 @@ from bfsql.models import (
     Node,
 )
 
-
 # ---------------------------------------------------------------------------
 # Mock backend
 # ---------------------------------------------------------------------------
 
 _NODES: dict[str, Node] = {
-    "Drug:A":    Node(id="Drug:A",    entity_type="Drug",    metadata={"name": "DrugA",    "mw": 342.4}),
-    "Disease:B": Node(id="Disease:B", entity_type="Disease", metadata={"name": "DiseaseB", "mesh": "D001"}),
-    "Gene:C":    Node(id="Gene:C",    entity_type="Gene",    metadata={"name": "GeneC",    "hgnc": "123"}),
-    "Disease:D": Node(id="Disease:D", entity_type="Disease", metadata={"name": "DiseaseD", "mesh": "D002"}),
+    "Drug:A": Node(
+        id="Drug:A", entity_type="Drug", metadata={"name": "DrugA", "mw": 342.4}
+    ),
+    "Disease:B": Node(
+        id="Disease:B",
+        entity_type="Disease",
+        metadata={"name": "DiseaseB", "mesh": "D001"},
+    ),
+    "Gene:C": Node(
+        id="Gene:C", entity_type="Gene", metadata={"name": "GeneC", "hgnc": "123"}
+    ),
+    "Disease:D": Node(
+        id="Disease:D",
+        entity_type="Disease",
+        metadata={"name": "DiseaseD", "mesh": "D002"},
+    ),
 }
 
 _EDGES: list[Edge] = [
-    Edge(subject="Drug:A",    predicate="TREATS",           object="Disease:B"),
-    Edge(subject="Drug:A",    predicate="INHIBITS",         object="Gene:C"),
-    Edge(subject="Gene:C",    predicate="ASSOCIATED_WITH",  object="Disease:B"),
-    Edge(subject="Disease:B", predicate="COMORBID_WITH",    object="Disease:D"),
+    Edge(subject="Drug:A", predicate="TREATS", object="Disease:B"),
+    Edge(subject="Drug:A", predicate="INHIBITS", object="Gene:C"),
+    Edge(subject="Gene:C", predicate="ASSOCIATED_WITH", object="Disease:B"),
+    Edge(subject="Disease:B", predicate="COMORBID_WITH", object="Disease:D"),
 ]
 
 _EDGE_META: dict[Edge, dict[str, Any]] = {
-    Edge(subject="Drug:A",    predicate="TREATS",           object="Disease:B"):  {"confidence": 0.95, "provenance": ["PMC001"]},
-    Edge(subject="Drug:A",    predicate="INHIBITS",         object="Gene:C"):     {"confidence": 0.80, "provenance": ["PMC002"]},
-    Edge(subject="Gene:C",    predicate="ASSOCIATED_WITH",  object="Disease:B"):  {"confidence": 0.70, "provenance": ["PMC003"]},
-    Edge(subject="Disease:B", predicate="COMORBID_WITH",    object="Disease:D"):  {"confidence": 0.60, "provenance": ["PMC004"]},
+    Edge(subject="Drug:A", predicate="TREATS", object="Disease:B"): {
+        "confidence": 0.95,
+        "provenance": ["PMC001"],
+    },
+    Edge(subject="Drug:A", predicate="INHIBITS", object="Gene:C"): {
+        "confidence": 0.80,
+        "provenance": ["PMC002"],
+    },
+    Edge(subject="Gene:C", predicate="ASSOCIATED_WITH", object="Disease:B"): {
+        "confidence": 0.70,
+        "provenance": ["PMC003"],
+    },
+    Edge(subject="Disease:B", predicate="COMORBID_WITH", object="Disease:D"): {
+        "confidence": 0.60,
+        "provenance": ["PMC004"],
+    },
 }
 
 
 class MockBackend(GraphDbInterface):
     async def search_entities(self, query: str) -> list[EntityStub]:
-        return [EntityStub(id=nid, entity_type=n.entity_type)
-                for nid, n in _NODES.items() if query.lower() in n.metadata.get("name", "").lower()]
+        return [
+            EntityStub(id=nid, entity_type=n.entity_type)
+            for nid, n in _NODES.items()
+            if query.lower() in n.metadata.get("name", "").lower()
+        ]
 
     async def edges_from(self, entity_id: str) -> list[Edge]:
         return [e for e in _EDGES if e.subject == entity_id]
@@ -86,20 +112,30 @@ class MockBackend(GraphDbInterface):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def node_ids(result: BfsResult) -> set[str]:
     return {n.id for n in result.nodes}
+
 
 def edge_tuples(result: BfsResult) -> set[tuple[str, str, str]]:
     return {(e.subject, e.predicate, e.object) for e in result.edges}
 
+
 def full_nodes(result: BfsResult) -> list[Node]:
     return [n for n in result.nodes if isinstance(n, Node) and n.metadata]
 
+
 def stub_nodes(result: BfsResult) -> list[EntityStub]:
-    return [n for n in result.nodes if isinstance(n, EntityStub) or not getattr(n, "metadata", None)]
+    return [
+        n
+        for n in result.nodes
+        if isinstance(n, EntityStub) or not getattr(n, "metadata", None)
+    ]
+
 
 def full_edges(result: BfsResult) -> list[EdgeWithMetadata]:
     return [e for e in result.edges if isinstance(e, EdgeWithMetadata)]
+
 
 def stub_edges(result: BfsResult) -> list[Edge]:
     return [e for e in result.edges if not isinstance(e, EdgeWithMetadata)]
@@ -108,6 +144,7 @@ def stub_edges(result: BfsResult) -> list[Edge]:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def db() -> MockBackend:
@@ -131,9 +168,9 @@ async def test_two_hops_reaches_disease_d(db):
 
 async def test_topology_complete_with_node_type_filter(db):
     """Non-matching nodes appear as stubs, not omitted."""
-    result = await bfs_query(db, BfsQuery(
-        seeds=["Drug:A"], max_hops=1, node_types=["Disease"]
-    ))
+    result = await bfs_query(
+        db, BfsQuery(seeds=["Drug:A"], max_hops=1, node_types=["Disease"])
+    )
     ids = node_ids(result)
     # Disease:B matches -- should be present
     assert "Disease:B" in ids
@@ -155,9 +192,9 @@ async def test_topology_complete_with_node_type_filter(db):
 
 async def test_topology_complete_with_predicate_filter(db):
     """Non-matching edges appear as stubs, not omitted."""
-    result = await bfs_query(db, BfsQuery(
-        seeds=["Drug:A"], max_hops=1, predicates=["TREATS"]
-    ))
+    result = await bfs_query(
+        db, BfsQuery(seeds=["Drug:A"], max_hops=1, predicates=["TREATS"])
+    )
     tuples = edge_tuples(result)
     # TREATS edge should be present
     assert ("Drug:A", "TREATS", "Disease:B") in tuples
@@ -175,17 +212,19 @@ async def test_no_filter_returns_all_full(db):
     """With no filters, all nodes and edges are full records."""
     result = await bfs_query(db, BfsQuery(seeds=["Drug:A"], max_hops=2))
     for node in result.nodes:
-        assert isinstance(node, Node), f"Expected full Node, got {type(node)} for {node.id}"
+        assert isinstance(
+            node, Node
+        ), f"Expected full Node, got {type(node)} for {node.id}"
         assert node.metadata
     for edge in result.edges:
-        assert isinstance(edge, EdgeWithMetadata), f"Expected EdgeWithMetadata, got stub for {edge.predicate}"
+        assert isinstance(
+            edge, EdgeWithMetadata
+        ), f"Expected EdgeWithMetadata, got stub for {edge.predicate}"
 
 
 async def test_multi_seed_union(db):
     """Multi-seed query returns the union of neighborhoods."""
-    result = await bfs_query(db, BfsQuery(
-        seeds=["Drug:A", "Disease:D"], max_hops=1
-    ))
+    result = await bfs_query(db, BfsQuery(seeds=["Drug:A", "Disease:D"], max_hops=1))
     ids = node_ids(result)
     # From Drug:A at 1 hop
     assert "Disease:B" in ids
@@ -206,9 +245,9 @@ async def test_node_count_and_edge_count(db):
 
 async def test_seeds_always_present(db):
     """Seed nodes are always in the result even with restrictive filters."""
-    result = await bfs_query(db, BfsQuery(
-        seeds=["Disease:D"], max_hops=1, node_types=["Drug"]
-    ))
+    result = await bfs_query(
+        db, BfsQuery(seeds=["Disease:D"], max_hops=1, node_types=["Drug"])
+    )
     assert "Disease:D" in node_ids(result)
 
 
@@ -227,6 +266,7 @@ async def test_seeds_always_present(db):
 #   Gene:C:    {Drug:A, Disease:B}
 #   Disease:D: {Disease:B}
 # ---------------------------------------------------------------------------
+
 
 async def test_intersection_two_seeds_k1(db):
     """Nodes within 1 hop of both Drug:A and Gene:C.

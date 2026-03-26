@@ -30,6 +30,7 @@ async def server(mock_backend):
 # Helpers: call tools directly from the registered functions
 # ---------------------------------------------------------------------------
 
+
 async def _get_tool(mcp, name):
     """Retrieve a registered tool's underlying function by name."""
     tools = await mcp.get_tools()
@@ -41,6 +42,7 @@ async def _get_tool(mcp, name):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 async def test_describe_schema(server, mock_backend):
     """describe_schema returns entity types, predicates, comprehensive flag, and next_steps."""
@@ -58,7 +60,7 @@ async def test_describe_schema(server, mock_backend):
 
 
 async def test_search_entities(server):
-    fn = await _get_tool(server,"search_entities")
+    fn = await _get_tool(server, "search_entities")
     results = await fn(query="DiseaseB")
     ids = {r["id"] for r in results}
     assert "Disease:B" in ids
@@ -96,7 +98,7 @@ async def test_bfs_query_schema_summary_topology_only(server):
 
 
 async def test_bfs_query_with_filters(server):
-    fn = await _get_tool(server,"bfs_query")
+    fn = await _get_tool(server, "bfs_query")
     result = await fn(
         seeds=["Drug:A"],
         max_hops=1,
@@ -121,14 +123,14 @@ async def test_bfs_query_with_filters(server):
 
 
 async def test_describe_entity(server):
-    fn = await _get_tool(server,"describe_entity")
+    fn = await _get_tool(server, "describe_entity")
     result = await fn(id="Disease:B")
     assert result["id"] == "Disease:B"
     assert result["entity_type"] == "Disease"
 
 
 async def test_describe_entity_missing(server):
-    fn = await _get_tool(server,"describe_entity")
+    fn = await _get_tool(server, "describe_entity")
     with pytest.raises(KeyError):
         await fn(id="NoSuch:X")
 
@@ -137,6 +139,9 @@ async def test_five_tools_registered(server):
     """Exactly five tools are registered."""
     tools = await server.get_tools()
     assert set(tools.keys()) == {
-        "describe_schema", "search_entities", "bfs_query",
-        "describe_entity", "intersect_subgraphs",
+        "describe_schema",
+        "search_entities",
+        "bfs_query",
+        "describe_entity",
+        "intersect_subgraphs",
     }

@@ -216,8 +216,7 @@ class Neo4jBackend(GraphDbInterface):
             for row in rows
         }
         return [
-            Node(id=eid, entity_type=type_map.get(eid, "Unknown"))
-            for eid in entity_ids
+            Node(id=eid, entity_type=type_map.get(eid, "Unknown")) for eid in entity_ids
         ]
 
     async def metadata_for_node(self, entity_id: str) -> dict[str, Any]:

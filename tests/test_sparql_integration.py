@@ -14,13 +14,19 @@ from bfsql.backends.sparql import SparqlBackend
 from bfsql.cache import CachedGraphDb
 from bfsql.engine import bfs_query
 from bfsql.models import BfsQuery
+
+pytest.skip(
+    "DBpedia integration tests disabled -- requires live external endpoint",
+    allow_module_level=True,
+)
+
 ENDPOINT = "https://dbpedia.org/sparql"
 
 PREFIXES = {
-    "DBpedia":     "http://dbpedia.org/resource/",
+    "DBpedia": "http://dbpedia.org/resource/",
     "DBpedia-owl": "http://dbpedia.org/ontology/",
-    "rdf":         "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    "rdfs":        "http://www.w3.org/2000/01/rdf-schema#",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
 }
 
 SEED = "DBpedia:Desmopressin"
@@ -43,6 +49,7 @@ def db(backend):
 # search_entities
 # ---------------------------------------------------------------------------
 
+
 async def test_search_desmopressin(backend):
     """search_entities('desmopressin') returns at least one result containing
     the canonical ID DBpedia:Desmopressin."""
@@ -55,6 +62,7 @@ async def test_search_desmopressin(backend):
 # ---------------------------------------------------------------------------
 # edges_from
 # ---------------------------------------------------------------------------
+
 
 async def test_edges_from_desmopressin(backend):
     """edges_from returns a non-empty list for Desmopressin."""
@@ -70,6 +78,7 @@ async def test_edges_from_desmopressin(backend):
 # get_node
 # ---------------------------------------------------------------------------
 
+
 async def test_get_node_type(backend):
     """get_node returns a Node with a non-empty entity_type for Desmopressin."""
     node = await backend.get_node(SEED)
@@ -80,6 +89,7 @@ async def test_get_node_type(backend):
 # ---------------------------------------------------------------------------
 # entity_types and predicates
 # ---------------------------------------------------------------------------
+
 
 async def test_entity_types_nonempty(backend):
     """entity_types() returns a non-empty list from the live endpoint."""
@@ -99,6 +109,7 @@ async def test_predicates_nonempty(backend):
 # 1-hop BFS via engine
 # ---------------------------------------------------------------------------
 
+
 async def test_bfs_1hop(db):
     """1-hop BFS from Desmopressin returns the seed and at least one neighbour."""
     result = await bfs_query(db, BfsQuery(seeds=[SEED], max_hops=1, topology_only=True))
@@ -111,6 +122,7 @@ async def test_bfs_1hop(db):
 # ---------------------------------------------------------------------------
 # Server tools end-to-end
 # ---------------------------------------------------------------------------
+
 
 async def test_server_describe_schema(backend):
     """entity_types() and predicates() together produce a valid schema dict."""
@@ -135,6 +147,6 @@ async def test_server_bfs_query_topology(db):
     assert result.node_count >= 1
     # topology_only: all nodes should be stubs (no metadata field populated)
     for node in result.nodes:
-        assert not getattr(node, "metadata", None), (
-            f"topology_only=True but node {node.id!r} has metadata"
-        )
+        assert not getattr(
+            node, "metadata", None
+        ), f"topology_only=True but node {node.id!r} has metadata"

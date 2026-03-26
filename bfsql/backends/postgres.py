@@ -108,8 +108,12 @@ class PostgresBackend(GraphDbInterface):
                 """,
                 entity_id,
             )
-        return [Edge(subject=r["subject_id"], predicate=r["predicate"], object=r["object_id"])
-                for r in rows]
+        return [
+            Edge(
+                subject=r["subject_id"], predicate=r["predicate"], object=r["object_id"]
+            )
+            for r in rows
+        ]
 
     async def edges_to(self, entity_id: str) -> list[Edge]:
         """Return all incoming edges to entity_id."""
@@ -122,8 +126,12 @@ class PostgresBackend(GraphDbInterface):
                 """,
                 entity_id,
             )
-        return [Edge(subject=r["subject_id"], predicate=r["predicate"], object=r["object_id"])
-                for r in rows]
+        return [
+            Edge(
+                subject=r["subject_id"], predicate=r["predicate"], object=r["object_id"]
+            )
+            for r in rows
+        ]
 
     async def get_node(self, entity_id: str) -> Node:
         """Return the node record for entity_id.
@@ -209,26 +217,22 @@ class PostgresBackend(GraphDbInterface):
     async def entity_types(self) -> list[str]:
         """Return all distinct entity types present in the graph."""
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+            rows = await conn.fetch("""
                 SELECT DISTINCT entity_type
                 FROM entity
                 WHERE status IS NULL OR status != 'merged'
                 ORDER BY entity_type
-                """
-            )
+                """)
         return [r["entity_type"] for r in rows]
 
     async def predicates(self) -> list[str]:
         """Return all distinct predicate names present in the graph."""
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+            rows = await conn.fetch("""
                 SELECT DISTINCT predicate
                 FROM relationship
                 ORDER BY predicate
-                """
-            )
+                """)
         return [r["predicate"] for r in rows]
 
     async def comprehensive(self) -> bool:
@@ -263,7 +267,9 @@ class PostgresBackend(GraphDbInterface):
                 embedding_str,
                 limit,
             )
-        return [EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows]
+        return [
+            EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows
+        ]
 
     async def _search_by_name(self, query: str, limit: int = 10) -> list[EntityStub]:
         """Fallback name search using ILIKE on name and synonyms."""
@@ -281,7 +287,9 @@ class PostgresBackend(GraphDbInterface):
                 pattern,
                 limit,
             )
-        return [EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows]
+        return [
+            EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows
+        ]
 
 
 async def _fetch_evidence(conn, rel_id, rel_key: str) -> list[dict[str, Any]]:

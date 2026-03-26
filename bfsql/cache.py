@@ -45,7 +45,9 @@ class CachedGraphDb(GraphDbInterface):
 
     async def edges_from(self, entity_id: str) -> list[Edge]:
         if entity_id not in self._edges_from_cache:
-            self._edges_from_cache[entity_id] = await self._backend.edges_from(entity_id)
+            self._edges_from_cache[entity_id] = await self._backend.edges_from(
+                entity_id
+            )
         return self._edges_from_cache[entity_id]
 
     async def edges_to(self, entity_id: str) -> list[Edge]:
@@ -68,7 +70,9 @@ class CachedGraphDb(GraphDbInterface):
 
     async def metadata_for_node(self, entity_id: str) -> dict[str, Any]:
         if entity_id not in self._node_meta_cache:
-            self._node_meta_cache[entity_id] = await self._backend.metadata_for_node(entity_id)
+            self._node_meta_cache[entity_id] = await self._backend.metadata_for_node(
+                entity_id
+            )
         return self._node_meta_cache[entity_id]
 
     async def metadata_for_edge(self, edge: Edge) -> dict[str, Any]:

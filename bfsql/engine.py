@@ -1,7 +1,7 @@
 """BFS traversal engine: multi-seed expansion, stub/full filtering, result assembly."""
 
 import asyncio
-from typing import Any
+from typing import cast
 
 from bfsql.abc import GraphDbInterface
 from bfsql.models import (
@@ -49,8 +49,8 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
             *[db.edges_to(entity_id) for entity_id in frontier],
         )
         new_edges: set[Edge] = set()
-        for edge_list in edge_lists:
-            new_edges.update(edge_list)
+        for elist in edge_lists:
+            new_edges.update(elist)
         all_edges.update(new_edges)
 
         # Next frontier: neighbors not yet visited
@@ -70,23 +70,26 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
     # topology_only skips all metadata fetches entirely.
     node_id_list = list(all_node_ids)
     raw_nodes = await db.get_nodes_batch(node_id_list)
+    node_list: list[Node | EntityStub]
     if query.topology_only:
-        nodes = [EntityStub(id=n.id, entity_type=n.entity_type) for n in raw_nodes]
+        node_list = [EntityStub(id=n.id, entity_type=n.entity_type) for n in raw_nodes]
     else:
-        nodes = await asyncio.gather(
-            *[_apply_node_filter(db, n, node_type_filter) for n in raw_nodes]
+        node_list = list(
+            await asyncio.gather(
+                *[_apply_node_filter(db, n, node_type_filter) for n in raw_nodes]
+            )
         )
 
     # Build edge results concurrently (topology_only uses bare Edge stubs).
+    edge_list: list[EdgeWithMetadata | Edge]
     if query.topology_only:
-        edges = list(all_edges)
+        edge_list = cast(list[EdgeWithMetadata | Edge], list(all_edges))
     else:
-        edges = await asyncio.gather(
-            *[_build_edge(db, edge, predicate_filter) for edge in all_edges]
+        edge_list = list(
+            await asyncio.gather(
+                *[_build_edge(db, edge, predicate_filter) for edge in all_edges]
+            )
         )
-
-    node_list = list(nodes)
-    edge_list = list(edges)
     schema_summary = SchemaSummary(
         entity_types_found=sorted({n.entity_type for n in node_list}),
         predicates_found=sorted({e.predicate for e in edge_list}),

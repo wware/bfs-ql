@@ -10,7 +10,6 @@ Run with:
 
 import json
 import os
-import uuid
 
 import asyncpg
 import pytest
@@ -74,18 +73,18 @@ DROP TABLE IF EXISTS entity;
 #   Disease:B --COMORBID_WITH--> Disease:D
 
 TEST_ENTITIES = [
-    ("Drug:A",    "Drug",    "DrugA",    None),
+    ("Drug:A", "Drug", "DrugA", None),
     ("Disease:B", "Disease", "DiseaseB", None),
-    ("Gene:C",    "Gene",    "GeneC",    None),
+    ("Gene:C", "Gene", "GeneC", None),
     ("Disease:D", "Disease", "DiseaseD", None),
-    ("Drug:Z",    "Drug",    "Merged",   "merged"),   # should be invisible
+    ("Drug:Z", "Drug", "Merged", "merged"),  # should be invisible
 ]
 
 TEST_RELATIONSHIPS = [
-    ("Drug:A",    "TREATS",          "Disease:B", 0.95),
-    ("Drug:A",    "INHIBITS",        "Gene:C",    0.80),
-    ("Gene:C",    "ASSOCIATED_WITH", "Disease:B", 0.70),
-    ("Disease:B", "COMORBID_WITH",   "Disease:D", 0.60),
+    ("Drug:A", "TREATS", "Disease:B", 0.95),
+    ("Drug:A", "INHIBITS", "Gene:C", 0.80),
+    ("Gene:C", "ASSOCIATED_WITH", "Disease:B", 0.70),
+    ("Disease:B", "COMORBID_WITH", "Disease:D", 0.60),
 ]
 
 
@@ -109,7 +108,11 @@ async def schema(conn):
             INSERT INTO entity (entity_id, entity_type, name, status, properties)
             VALUES ($1, $2, $3, $4, $5)
             """,
-            entity_id, entity_type, name, status, json.dumps({"test": True}),
+            entity_id,
+            entity_type,
+            name,
+            status,
+            json.dumps({"test": True}),
         )
 
     rel_ids = {}
@@ -121,7 +124,10 @@ async def schema(conn):
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             """,
-            subject_id, predicate, object_id, confidence,
+            subject_id,
+            predicate,
+            object_id,
+            confidence,
             json.dumps(["PMC001"]),
         )
         rel_ids[(subject_id, predicate, object_id)] = row["id"]
@@ -133,7 +139,9 @@ async def schema(conn):
         INSERT INTO evidence (relationship_id, evidence_type, confidence_score, metadata_)
         VALUES ($1, $2, $3, $4)
         """,
-        treats_id, "clinical_trial", 0.95,
+        treats_id,
+        "clinical_trial",
+        0.95,
         json.dumps({"source_doc": "PMC001", "section": "Results"}),
     )
 
@@ -152,6 +160,7 @@ async def backend():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 async def test_entity_types(backend):
     types = await backend.entity_types()
@@ -230,12 +239,15 @@ async def test_full_bfs_query_via_engine(backend):
     from bfsql.models import BfsQuery
 
     cached = CachedGraphDb(backend)
-    result = await bfs_query(cached, BfsQuery(
-        seeds=["Drug:A"],
-        max_hops=2,
-        node_types=["Disease"],
-        predicates=["TREATS"],
-    ))
+    result = await bfs_query(
+        cached,
+        BfsQuery(
+            seeds=["Drug:A"],
+            max_hops=2,
+            node_types=["Disease"],
+            predicates=["TREATS"],
+        ),
+    )
 
     node_ids = {n.id for n in result.nodes}
     assert "Drug:A" in node_ids

@@ -17,12 +17,12 @@ from typing import Any
 import aiohttp
 from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
-
 from bfsql.abc import GraphDbInterface
 from bfsql.models import Edge, EntityStub, Node
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # SPARQL JSON result bindings use these type strings
 _URI = "uri"
@@ -182,8 +182,7 @@ class SparqlBackend(GraphDbInterface):
         if not self._restrict_to_prefixes or not self._prefixes:
             return ""
         clauses = " || ".join(
-            f'STRSTARTS(STR({var}), "{base}")'
-            for base in self._prefixes.values()
+            f'STRSTARTS(STR({var}), "{base}")' for base in self._prefixes.values()
         )
         return f" && ({clauses})"
 
@@ -314,7 +313,7 @@ LIMIT 1
         """
         type_map: dict[str, str] = {}
         for i in range(0, len(entity_ids), self._node_batch_size):
-            chunk = entity_ids[i:i + self._node_batch_size]
+            chunk = entity_ids[i : i + self._node_batch_size]
             values = " ".join(f"<{self._expand(eid)}>" for eid in chunk)
             sparql = f"""
 SELECT ?entity ?type WHERE {{

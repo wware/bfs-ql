@@ -175,10 +175,12 @@ def main():
 
         if args.backend == "postgres":
             from bfsql.backends.postgres import PostgresBackend
+
             factory = PostgresBackend.create
 
         elif args.backend == "sparql":
             from bfsql.backends.sparql import SparqlBackend
+
             prefixes = dict(args.prefixes)
             safe_distinct = args.safe_distinct
             use_bif_contains = args.use_bif_contains
@@ -203,6 +205,7 @@ def main():
 
         elif args.backend == "neo4j":
             from bfsql.backends.neo4j import Neo4jBackend
+
             factory = Neo4jBackend.create
 
         else:

@@ -47,9 +47,14 @@ _PASS = os.environ.get("NEO4J_PASSWORD", "testpassword")
 # Reachability skip
 # ---------------------------------------------------------------------------
 
+
 async def _neo4j_reachable() -> bool:
     try:
-        driver = AsyncGraphDatabase.driver(_URI, auth=(_USER, _PASS))
+        driver = AsyncGraphDatabase.driver(
+            _URI,
+            auth=(_USER, _PASS),
+            connection_timeout=3.0,
+        )
         async with driver.session() as session:
             await session.run("RETURN 1")
         await driver.close()
@@ -69,30 +74,40 @@ async def neo4j_available():
 
 TEST_NODES = [
     # (id, label, name, extra_props)
-    ("Drug:Metformin",       "Drug",     "Metformin",   {"mw": 129.16, "approved": True}),
-    ("Drug:Warfarin",        "Drug",     "Warfarin",    {"mw": 308.33, "approved": True}),
-    ("Disease:T2Diabetes",   "Disease",  "Type 2 Diabetes", {"icd10": "E11"}),
-    ("Disease:AFib",         "Disease",  "Atrial Fibrillation", {"icd10": "I48"}),
-    ("Disease:Hypertension", "Disease",  "Hypertension", {"icd10": "I10"}),
-    ("Disease:Cancer",       "Disease",  "Cancer",      {"icd10": "C80"}),
-    ("Gene:AMPK",            "Gene",     "AMPK",        {"chromosome": "1p36"}),
-    ("Gene:mTOR",            "Gene",     "mTOR",        {"chromosome": "1p36.2"}),
-    ("Protein:AKT1",         "Protein",  "AKT1",        {"uniprot": "P31749"}),
-    ("Pathway:Glycolysis",   "Pathway",  "Glycolysis",  {"database": "KEGG"}),
+    ("Drug:Metformin", "Drug", "Metformin", {"mw": 129.16, "approved": True}),
+    ("Drug:Warfarin", "Drug", "Warfarin", {"mw": 308.33, "approved": True}),
+    ("Disease:T2Diabetes", "Disease", "Type 2 Diabetes", {"icd10": "E11"}),
+    ("Disease:AFib", "Disease", "Atrial Fibrillation", {"icd10": "I48"}),
+    ("Disease:Hypertension", "Disease", "Hypertension", {"icd10": "I10"}),
+    ("Disease:Cancer", "Disease", "Cancer", {"icd10": "C80"}),
+    ("Gene:AMPK", "Gene", "AMPK", {"chromosome": "1p36"}),
+    ("Gene:mTOR", "Gene", "mTOR", {"chromosome": "1p36.2"}),
+    ("Protein:AKT1", "Protein", "AKT1", {"uniprot": "P31749"}),
+    ("Pathway:Glycolysis", "Pathway", "Glycolysis", {"database": "KEGG"}),
 ]
 
 TEST_EDGES = [
     # (subject_id, predicate, object_id, props)
-    ("Drug:Metformin",     "TREATS",          "Disease:T2Diabetes",   {"confidence": 0.97}),
-    ("Drug:Metformin",     "INHIBITS",        "Gene:AMPK",            {"confidence": 0.85}),
-    ("Drug:Metformin",     "INTERACTS_WITH",  "Drug:Warfarin",        {"confidence": 0.72, "severity": "moderate"}),
-    ("Drug:Warfarin",      "TREATS",          "Disease:AFib",         {"confidence": 0.95}),
-    ("Gene:AMPK",          "REGULATES",       "Gene:mTOR",            {"confidence": 0.88}),
-    ("Gene:AMPK",          "ASSOCIATED_WITH", "Disease:T2Diabetes",   {"confidence": 0.80}),
-    ("Gene:mTOR",          "ASSOCIATED_WITH", "Disease:Cancer",       {"confidence": 0.75}),
-    ("Disease:T2Diabetes", "COMORBID_WITH",   "Disease:Hypertension", {"confidence": 0.65}),
-    ("Protein:AKT1",       "BINDS",           "Gene:AMPK",            {"confidence": 0.90}),
-    ("Pathway:Glycolysis", "INVOLVES",        "Gene:AMPK",            {"confidence": 1.0}),
+    ("Drug:Metformin", "TREATS", "Disease:T2Diabetes", {"confidence": 0.97}),
+    ("Drug:Metformin", "INHIBITS", "Gene:AMPK", {"confidence": 0.85}),
+    (
+        "Drug:Metformin",
+        "INTERACTS_WITH",
+        "Drug:Warfarin",
+        {"confidence": 0.72, "severity": "moderate"},
+    ),
+    ("Drug:Warfarin", "TREATS", "Disease:AFib", {"confidence": 0.95}),
+    ("Gene:AMPK", "REGULATES", "Gene:mTOR", {"confidence": 0.88}),
+    ("Gene:AMPK", "ASSOCIATED_WITH", "Disease:T2Diabetes", {"confidence": 0.80}),
+    ("Gene:mTOR", "ASSOCIATED_WITH", "Disease:Cancer", {"confidence": 0.75}),
+    (
+        "Disease:T2Diabetes",
+        "COMORBID_WITH",
+        "Disease:Hypertension",
+        {"confidence": 0.65},
+    ),
+    ("Protein:AKT1", "BINDS", "Gene:AMPK", {"confidence": 0.90}),
+    ("Pathway:Glycolysis", "INVOLVES", "Gene:AMPK", {"confidence": 1.0}),
 ]
 
 _CREATE_GRAPH = """
@@ -123,7 +138,9 @@ async def graph(raw_driver):
             props = {"name": name, **extra}
             await session.run(
                 f"CREATE (n:{label} {{id: $id, name: $name}}) SET n += $props",
-                id=node_id, name=name, props=props,
+                id=node_id,
+                name=name,
+                props=props,
             )
 
         # Create edges
@@ -131,7 +148,9 @@ async def graph(raw_driver):
             await session.run(
                 f"MATCH (a {{id: $s}}), (b {{id: $o}}) "
                 f"CREATE (a)-[r:{pred}]->(b) SET r += $props",
-                s=subj, o=obj, props=props,
+                s=subj,
+                o=obj,
+                props=props,
             )
 
         # Create fulltext index for name search
@@ -144,9 +163,7 @@ async def graph(raw_driver):
 
     async with raw_driver.session() as session:
         await session.run("MATCH (n) DETACH DELETE n")
-        await session.run(
-            "DROP INDEX entity_name_index IF EXISTS"
-        )
+        await session.run("DROP INDEX entity_name_index IF EXISTS")
 
 
 @pytest.fixture(scope="session")
@@ -162,6 +179,7 @@ async def backend(neo4j_available):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 async def test_entity_types(backend, graph):
     types = await backend.entity_types()
     assert set(types) >= {"Drug", "Disease", "Gene", "Protein", "Pathway"}
@@ -170,8 +188,14 @@ async def test_entity_types(backend, graph):
 async def test_predicates(backend, graph):
     preds = await backend.predicates()
     assert set(preds) >= {
-        "TREATS", "INHIBITS", "INTERACTS_WITH", "REGULATES",
-        "ASSOCIATED_WITH", "COMORBID_WITH", "BINDS", "INVOLVES",
+        "TREATS",
+        "INHIBITS",
+        "INTERACTS_WITH",
+        "REGULATES",
+        "ASSOCIATED_WITH",
+        "COMORBID_WITH",
+        "BINDS",
+        "INVOLVES",
     }
 
 
@@ -254,13 +278,17 @@ async def test_metadata_for_node(backend, graph):
 
 
 async def test_metadata_for_edge(backend, graph):
-    edge = Edge(subject="Drug:Metformin", predicate="TREATS", object="Disease:T2Diabetes")
+    edge = Edge(
+        subject="Drug:Metformin", predicate="TREATS", object="Disease:T2Diabetes"
+    )
     meta = await backend.metadata_for_edge(edge)
     assert meta.get("confidence") == pytest.approx(0.97)
 
 
 async def test_metadata_for_edge_with_extra_props(backend, graph):
-    edge = Edge(subject="Drug:Metformin", predicate="INTERACTS_WITH", object="Drug:Warfarin")
+    edge = Edge(
+        subject="Drug:Metformin", predicate="INTERACTS_WITH", object="Drug:Warfarin"
+    )
     meta = await backend.metadata_for_edge(edge)
     assert meta.get("confidence") == pytest.approx(0.72)
     assert meta.get("severity") == "moderate"
@@ -283,12 +311,15 @@ async def test_full_bfs_via_engine(backend, graph):
     from bfsql.models import BfsQuery
 
     cached = CachedGraphDb(backend)
-    result = await bfs_query(cached, BfsQuery(
-        seeds=["Drug:Metformin"],
-        max_hops=2,
-        node_types=["Disease"],
-        predicates=["TREATS"],
-    ))
+    result = await bfs_query(
+        cached,
+        BfsQuery(
+            seeds=["Drug:Metformin"],
+            max_hops=2,
+            node_types=["Disease"],
+            predicates=["TREATS"],
+        ),
+    )
 
     node_ids = {n.id for n in result.nodes}
     # Hop 1: Metformin -TREATS-> T2Diabetes
@@ -303,8 +334,11 @@ async def test_full_bfs_via_engine(backend, graph):
 
     # Metformin -TREATS-> T2Diabetes edge should be full EdgeWithMetadata
     treats = next(
-        (e for e in result.edges
-         if e.predicate == "TREATS" and e.subject == "Drug:Metformin"),
+        (
+            e
+            for e in result.edges
+            if e.predicate == "TREATS" and e.subject == "Drug:Metformin"
+        ),
         None,
     )
     assert treats is not None
@@ -319,11 +353,14 @@ async def test_bfs_topology_only(backend, graph):
     from bfsql.models import BfsQuery, EntityStub
 
     cached = CachedGraphDb(backend)
-    result = await bfs_query(cached, BfsQuery(
-        seeds=["Gene:AMPK"],
-        max_hops=1,
-        topology_only=True,
-    ))
+    result = await bfs_query(
+        cached,
+        BfsQuery(
+            seeds=["Gene:AMPK"],
+            max_hops=1,
+            topology_only=True,
+        ),
+    )
 
     # All nodes are stubs in topology_only mode
     for node in result.nodes:
@@ -343,11 +380,14 @@ async def test_schema_summary_populated(backend, graph):
     from bfsql.models import BfsQuery
 
     cached = CachedGraphDb(backend)
-    result = await bfs_query(cached, BfsQuery(
-        seeds=["Drug:Metformin"],
-        max_hops=1,
-        topology_only=True,
-    ))
+    result = await bfs_query(
+        cached,
+        BfsQuery(
+            seeds=["Drug:Metformin"],
+            max_hops=1,
+            topology_only=True,
+        ),
+    )
 
     assert "Drug" in result.schema_summary.entity_types_found
     assert "TREATS" in result.schema_summary.predicates_found

@@ -8,8 +8,13 @@ from fastmcp import FastMCP
 from bfsql.cache import CachedGraphDb
 from bfsql.engine import bfs_query as _bfs_query
 from bfsql.engine import neighborhood_intersection as _neighborhood_intersection
-from bfsql.models import BfsQuery, BfsResult, IntersectionResult, SchemaSummary, SchemaDescription
-
+from bfsql.models import (
+    BfsQuery,
+    BfsResult,
+    IntersectionResult,
+    SchemaSummary,
+    SchemaDescription,
+)
 
 # Schema injection threshold: if the graph has more entity types or
 # predicates than these limits, skip injection and rely on describe_schema().
@@ -31,7 +36,9 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             in describe_schema() responses.
     """
     # Detect whether we got a factory (async callable) or a live backend instance.
-    _is_factory = callable(backend_or_factory) and not hasattr(backend_or_factory, "search_entities")
+    _is_factory = callable(backend_or_factory) and not hasattr(
+        backend_or_factory, "search_entities"
+    )
 
     # These are populated during lifespan startup.
     _state: dict[str, Any] = {
@@ -71,10 +78,12 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     # Tool: describe_schema
     # ------------------------------------------------------------------
 
-    @mcp.tool(description="Return schema information for this graph. Always call this "
-              "first. Follow the next_steps field for graph-specific workflow guidance. "
-              "When comprehensive=False, entity_types and predicates are a sample only; "
-              "use schema_summary in bfs_query results to discover the local vocabulary.")
+    @mcp.tool(
+        description="Return schema information for this graph. Always call this "
+        "first. Follow the next_steps field for graph-specific workflow guidance. "
+        "When comprehensive=False, entity_types and predicates are a sample only; "
+        "use schema_summary in bfs_query results to discover the local vocabulary."
+    )
     async def describe_schema() -> dict:
         """Return schema information for this graph."""
         db = _db()
@@ -90,12 +99,14 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     # Tool: search_entities
     # ------------------------------------------------------------------
 
-    @mcp.tool(description="Search for entities by name or alias and return their "
-              "canonical IDs. Searches the entity name field -- use a specific name "
-              "like 'desmopressin' or 'Cushing disease', NOT an entity type like "
-              "'drug' or 'paper'. Always call this before bfs_query when you have a "
-              "name but not yet a canonical ID. Results may be ambiguous; inspect "
-              "entity_type to pick the right one.")
+    @mcp.tool(
+        description="Search for entities by name or alias and return their "
+        "canonical IDs. Searches the entity name field -- use a specific name "
+        "like 'desmopressin' or 'Cushing disease', NOT an entity type like "
+        "'drug' or 'paper'. Always call this before bfs_query when you have a "
+        "name but not yet a canonical ID. Results may be ambiguous; inspect "
+        "entity_type to pick the right one."
+    )
     async def search_entities(query: str) -> list[dict]:
         """Find entities by name or alias.
 
@@ -146,27 +157,32 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             omitted to keep size manageable -- use describe_entity() for full
             provenance on a specific node.
         """
-        result: BfsResult = await _bfs_query(_db(), BfsQuery(
-            seeds=seeds,
-            max_hops=max_hops,
-            node_types=node_types or [],
-            predicates=predicates or [],
-            topology_only=topology_only,
-        ))
+        result: BfsResult = await _bfs_query(
+            _db(),
+            BfsQuery(
+                seeds=seeds,
+                max_hops=max_hops,
+                node_types=node_types or [],
+                predicates=predicates or [],
+                topology_only=topology_only,
+            ),
+        )
         return _slim_result(result, topology_only=topology_only)
 
     # ------------------------------------------------------------------
     # Tool: intersect_subgraphs
     # ------------------------------------------------------------------
 
-    @mcp.tool(description=(
-        "Return nodes that are within k hops of ALL given seeds (intersection "
-        "of k-hop neighborhoods). Edges are treated as undirected. Use this to "
-        "answer questions like 'what actors appeared in movies with both Tom Hanks "
-        "and Meg Ryan?' (seeds=[Tom Hanks, Meg Ryan], k=2) or 'what concepts are "
-        "near all of these entities?'. Returns a flat list of entity stubs -- "
-        "call describe_entity() on any result for full metadata."
-    ))
+    @mcp.tool(
+        description=(
+            "Return nodes that are within k hops of ALL given seeds (intersection "
+            "of k-hop neighborhoods). Edges are treated as undirected. Use this to "
+            "answer questions like 'what actors appeared in movies with both Tom Hanks "
+            "and Meg Ryan?' (seeds=[Tom Hanks, Meg Ryan], k=2) or 'what concepts are "
+            "near all of these entities?'. Returns a flat list of entity stubs -- "
+            "call describe_entity() on any result for full metadata."
+        )
+    )
     async def intersect_subgraphs(seeds: list[str], k: int) -> dict:
         """Find nodes within k undirected hops of every seed.
 
@@ -190,8 +206,10 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     # Tool: describe_entity
     # ------------------------------------------------------------------
 
-    @mcp.tool(description="Retrieve full metadata for a single entity by canonical ID. "
-              "Use this to expand a stub node returned by bfs_query.")
+    @mcp.tool(
+        description="Retrieve full metadata for a single entity by canonical ID. "
+        "Use this to expand a stub node returned by bfs_query."
+    )
     async def describe_entity(id: str) -> dict:
         """Get full metadata for one entity.
 
@@ -215,8 +233,12 @@ def _bfs_query_description(entity_types: list[str], predicates: list[str]) -> st
         "Filters control detail level, not which nodes appear: non-matching "
         "nodes and edges appear as lightweight stubs preserving full topology."
     )
-    if (entity_types and len(entity_types) <= _MAX_INJECT_TYPES and
-            predicates and len(predicates) <= _MAX_INJECT_PREDICATES):
+    if (
+        entity_types
+        and len(entity_types) <= _MAX_INJECT_TYPES
+        and predicates
+        and len(predicates) <= _MAX_INJECT_PREDICATES
+    ):
         types_str = ", ".join(entity_types)
         preds_str = ", ".join(predicates)
         return (
@@ -227,7 +249,12 @@ def _bfs_query_description(entity_types: list[str], predicates: list[str]) -> st
     return base
 
 
-_EDGE_META_STRIP = {"provenance", "strongest_evidence_quote", "evidence_confidence_avg", "created_at"}
+_EDGE_META_STRIP = {
+    "provenance",
+    "strongest_evidence_quote",
+    "evidence_confidence_avg",
+    "created_at",
+}
 
 
 def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
@@ -250,7 +277,11 @@ def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
             for n in data.get("nodes", [])
         ]
         data["edges"] = [
-            {"subject": e["subject"], "predicate": e["predicate"], "object": e["object"]}
+            {
+                "subject": e["subject"],
+                "predicate": e["predicate"],
+                "object": e["object"],
+            }
             for e in data.get("edges", [])
         ]
     else:
