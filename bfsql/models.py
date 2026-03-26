@@ -120,16 +120,68 @@ class BfsResult(BaseModel, frozen=True):
     )
 
 
+class IntersectionQuery(BaseModel, frozen=True):
+    """Parameters for a subgraph intersection query."""
+
+    seeds: list[str] = Field(
+        description="Two or more canonical entity IDs to intersect from."
+    )
+    k: int = Field(
+        description="Hop radius. Nodes within this many undirected hops of every seed are included.",
+        ge=1,
+        le=5,
+    )
+    node_types: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Entity type names that receive full metadata. Non-matching nodes appear "
+            "as stubs. Omit to receive full data on all nodes."
+        ),
+    )
+    predicates: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Predicate names that receive full metadata including provenance. "
+            "Non-matching edges appear as stubs. Omit to receive full data on all edges."
+        ),
+    )
+    topology_only: bool = Field(
+        default=False,
+        description=(
+            "If True, skip all metadata fetches. All nodes and edges are returned "
+            "as stubs (IDs and types only). Much faster for structural exploration."
+        ),
+    )
+
+
 class IntersectionResult(BaseModel, frozen=True):
     """Result of a subgraph intersection query."""
 
     seeds: list[str] = Field(description="The seed IDs used in this query.")
     k: int = Field(description="The hop radius used.")
     node_count: int = Field(description="Number of nodes in the intersection.")
-    nodes: list[EntityStub] = Field(
+    edge_count: int = Field(
+        description="Number of edges in the induced subgraph on the intersection nodes."
+    )
+    nodes: list[Node | EntityStub] = Field(
         description=(
             "Nodes within k undirected hops of every seed. "
+            "Nodes matching node_types (or all nodes when node_types is empty) are full "
+            "Node records. Others are EntityStub records. "
             "Includes the seeds themselves if they are mutually reachable."
+        )
+    )
+    edges: list[EdgeWithMetadata | Edge] = Field(
+        description=(
+            "Induced subgraph edges: edges whose both endpoints are in the intersection. "
+            "Edges matching predicates (or all edges when predicates is empty) are "
+            "EdgeWithMetadata records. Others are Edge stubs."
+        )
+    )
+    schema_summary: SchemaSummary = Field(
+        description=(
+            "Entity types and predicates actually present in this intersection subgraph. "
+            "Always populated regardless of filters."
         )
     )
 

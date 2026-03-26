@@ -23,6 +23,8 @@ from bfsql.models import (
     Edge,
     EdgeWithMetadata,
     EntityStub,
+    IntersectionQuery,
+    IntersectionResult,
     Node,
 )
 
@@ -265,7 +267,17 @@ async def test_seeds_always_present(db):
 #   Disease:B: {Drug:A, Gene:C, Disease:D}
 #   Gene:C:    {Drug:A, Disease:B}
 #   Disease:D: {Disease:B}
+#
+# Induced edges within {Drug:A, Disease:B, Gene:C} (k=1 from Drug:A+Gene:C):
+#   Drug:A --TREATS--> Disease:B
+#   Drug:A --INHIBITS--> Gene:C
+#   Gene:C --ASSOCIATED_WITH--> Disease:B
 # ---------------------------------------------------------------------------
+
+
+def _iq(seeds, k, **kwargs) -> IntersectionQuery:
+    """Convenience constructor for IntersectionQuery."""
+    return IntersectionQuery(seeds=seeds, k=k, **kwargs)
 
 
 async def test_intersection_two_seeds_k1(db):
@@ -275,15 +287,16 @@ async def test_intersection_two_seeds_k1(db):
     1-hop of Gene:C:    {Gene:C, Drug:A, Disease:B}
     intersection:       {Drug:A, Disease:B, Gene:C}
     """
-    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=1)
-    ids = {n.id for n in result}
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    assert isinstance(result, IntersectionResult)
+    ids = {n.id for n in result.nodes}
     assert ids == {"Drug:A", "Disease:B", "Gene:C"}
 
 
 async def test_intersection_two_seeds_k1_disease_d_excluded(db):
     """Disease:D is 2 hops from Drug:A and 2 hops from Gene:C, excluded at k=1."""
-    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=1)
-    ids = {n.id for n in result}
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    ids = {n.id for n in result.nodes}
     assert "Disease:D" not in ids
 
 
@@ -294,53 +307,168 @@ async def test_intersection_two_seeds_k2_includes_disease_d(db):
     2-hop of Gene:C:    {Gene:C, Drug:A, Disease:B, Disease:D}
     intersection:       all four nodes
     """
-    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=2)
-    ids = {n.id for n in result}
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=2))
+    ids = {n.id for n in result.nodes}
     assert "Disease:D" in ids
     assert ids == {"Drug:A", "Disease:B", "Gene:C", "Disease:D"}
 
 
-async def test_intersection_distant_seeds_k1_empty(db):
-    """Drug:A and Disease:D are 2 hops apart; no common 1-hop neighbors.
+async def test_intersection_distant_seeds_k1(db):
+    """Drug:A and Disease:D share only Disease:B at k=1.
 
     1-hop of Drug:A:    {Drug:A, Disease:B, Gene:C}
     1-hop of Disease:D: {Disease:D, Disease:B}
     intersection:       {Disease:B}
     """
-    result = await neighborhood_intersection(db, ["Drug:A", "Disease:D"], k=1)
-    ids = {n.id for n in result}
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Disease:D"], k=1))
+    ids = {n.id for n in result.nodes}
     assert ids == {"Disease:B"}
 
 
 async def test_intersection_single_seed(db):
     """Single seed returns its own k-hop neighborhood."""
-    result = await neighborhood_intersection(db, ["Drug:A"], k=1)
-    ids = {n.id for n in result}
+    result = await neighborhood_intersection(db, _iq(["Drug:A"], k=1))
+    ids = {n.id for n in result.nodes}
     assert ids == {"Drug:A", "Disease:B", "Gene:C"}
 
 
 async def test_intersection_empty_seeds(db):
-    """Empty seeds list returns empty."""
-    result = await neighborhood_intersection(db, [], k=2)
-    assert result == []
+    """Empty seeds list returns an empty IntersectionResult."""
+    result = await neighborhood_intersection(db, _iq([], k=2))
+    assert isinstance(result, IntersectionResult)
+    assert result.node_count == 0
+    assert result.edge_count == 0
+    assert result.nodes == []
+    assert result.edges == []
 
 
 async def test_intersection_missing_seed(db):
-    """A missing seed causes empty result."""
-    result = await neighborhood_intersection(db, ["Drug:A", "NoSuch:X"], k=2)
-    assert result == []
+    """A missing seed causes an empty IntersectionResult."""
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "NoSuch:X"], k=2))
+    assert result.node_count == 0
+    assert result.nodes == []
 
 
 async def test_intersection_same_seed_twice(db):
     """Duplicate seeds are redundant but valid."""
-    result = await neighborhood_intersection(db, ["Drug:A", "Drug:A"], k=1)
-    ids = {n.id for n in result}
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Drug:A"], k=1))
+    ids = {n.id for n in result.nodes}
     assert ids == {"Drug:A", "Disease:B", "Gene:C"}
 
 
-async def test_intersection_returns_entity_stubs(db):
-    """Result nodes are EntityStub records (no metadata fetched)."""
-    result = await neighborhood_intersection(db, ["Drug:A", "Gene:C"], k=1)
-    for node in result:
+async def test_intersection_result_counts(db):
+    """node_count and edge_count match the lengths of their lists."""
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    assert result.node_count == len(result.nodes)
+    assert result.edge_count == len(result.edges)
+
+
+# ---------------------------------------------------------------------------
+# Induced edges
+# ---------------------------------------------------------------------------
+
+
+async def test_intersection_induced_edges_k1(db):
+    """All three edges among {Drug:A, Disease:B, Gene:C} are included.
+
+    Induced edges:
+      Drug:A --TREATS--> Disease:B
+      Drug:A --INHIBITS--> Gene:C
+      Gene:C --ASSOCIATED_WITH--> Disease:B
+    """
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    edge_triples = {(e.subject, e.predicate, e.object) for e in result.edges}
+    assert edge_triples == {
+        ("Drug:A", "TREATS", "Disease:B"),
+        ("Drug:A", "INHIBITS", "Gene:C"),
+        ("Gene:C", "ASSOCIATED_WITH", "Disease:B"),
+    }
+
+
+async def test_intersection_induced_edges_exclude_boundary(db):
+    """COMORBID_WITH is not induced: Disease:D is outside the k=1 intersection."""
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    predicates = {e.predicate for e in result.edges}
+    assert "COMORBID_WITH" not in predicates
+
+
+async def test_intersection_induced_edges_k2_includes_comorbid(db):
+    """At k=2 all four nodes are in the intersection, so all four edges are induced."""
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=2))
+    predicates = {e.predicate for e in result.edges}
+    assert "COMORBID_WITH" in predicates
+    assert len(result.edges) == 4
+
+
+# ---------------------------------------------------------------------------
+# Stub/full filtering and topology_only
+# ---------------------------------------------------------------------------
+
+
+async def test_intersection_default_returns_full_nodes(db):
+    """Without node_types filter, all nodes are full Node records."""
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    for node in result.nodes:
+        assert isinstance(node, Node)
+        assert node.metadata  # metadata was fetched
+
+
+async def test_intersection_node_type_filter(db):
+    """node_types filter: Drug nodes get full records, others get stubs."""
+    result = await neighborhood_intersection(
+        db, _iq(["Drug:A", "Gene:C"], k=1, node_types=["Drug"])
+    )
+    for node in result.nodes:
+        if node.entity_type == "Drug":
+            assert isinstance(node, Node)
+        else:
+            assert isinstance(node, EntityStub)
+
+
+async def test_intersection_predicate_filter(db):
+    """predicates filter: TREATS edges get full records, others get stubs."""
+    result = await neighborhood_intersection(
+        db, _iq(["Drug:A", "Gene:C"], k=1, predicates=["TREATS"])
+    )
+    for edge in result.edges:
+        if edge.predicate == "TREATS":
+            assert isinstance(edge, EdgeWithMetadata)
+        else:
+            assert isinstance(edge, Edge)
+
+
+async def test_intersection_topology_only(db):
+    """topology_only: all nodes are EntityStub, all edges are bare Edge."""
+    result = await neighborhood_intersection(
+        db, _iq(["Drug:A", "Gene:C"], k=1, topology_only=True)
+    )
+    for node in result.nodes:
         assert isinstance(node, EntityStub)
-        assert node.entity_type  # type is populated
+    for edge in result.edges:
+        assert isinstance(edge, Edge)
+        assert not isinstance(edge, EdgeWithMetadata)
+
+
+# ---------------------------------------------------------------------------
+# schema_summary
+# ---------------------------------------------------------------------------
+
+
+async def test_intersection_schema_summary(db):
+    """schema_summary reflects actual entity types and predicates in the result."""
+    result = await neighborhood_intersection(db, _iq(["Drug:A", "Gene:C"], k=1))
+    assert set(result.schema_summary.entity_types_found) == {"Drug", "Disease", "Gene"}
+    assert set(result.schema_summary.predicates_found) == {
+        "TREATS",
+        "INHIBITS",
+        "ASSOCIATED_WITH",
+    }
+
+
+async def test_intersection_schema_summary_populated_with_topology_only(db):
+    """schema_summary is populated even when topology_only=True."""
+    result = await neighborhood_intersection(
+        db, _iq(["Drug:A", "Gene:C"], k=1, topology_only=True)
+    )
+    assert result.schema_summary.entity_types_found
+    assert result.schema_summary.predicates_found

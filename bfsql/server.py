@@ -1,4 +1,4 @@
-"""BFS-QL MCP server -- four tools over a GraphDbInterface backend."""
+"""BFS-QL MCP server -- five tools over a GraphDbInterface backend."""
 
 from contextlib import asynccontextmanager
 from typing import Any
@@ -11,7 +11,7 @@ from bfsql.engine import neighborhood_intersection as _neighborhood_intersection
 from bfsql.models import (
     BfsQuery,
     BfsResult,
-    IntersectionResult,
+    IntersectionQuery,
     SchemaSummary,
     SchemaDescription,
 )
@@ -175,32 +175,48 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
 
     @mcp.tool(
         description=(
-            "Return nodes that are within k hops of ALL given seeds (intersection "
-            "of k-hop neighborhoods). Edges are treated as undirected. Use this to "
-            "answer questions like 'what actors appeared in movies with both Tom Hanks "
-            "and Meg Ryan?' (seeds=[Tom Hanks, Meg Ryan], k=2) or 'what concepts are "
-            "near all of these entities?'. Returns a flat list of entity stubs -- "
-            "call describe_entity() on any result for full metadata."
+            "Return nodes within k hops of ALL given seeds (intersection of "
+            "k-hop neighborhoods) and the induced subgraph edges between them. "
+            "Edges are treated as undirected for traversal. Use this to answer "
+            "questions like 'what actors appeared in movies with both Tom Hanks "
+            "and Meg Ryan?' (seeds=[Tom Hanks, Meg Ryan], k=2) or 'what concepts "
+            "are near all of these entities?'. Supports the same node_types, "
+            "predicates, and topology_only filters as bfs_query."
         )
     )
-    async def intersect_subgraphs(seeds: list[str], k: int) -> dict:
-        """Find nodes within k undirected hops of every seed.
+    async def intersect_subgraphs(
+        seeds: list[str],
+        k: int,
+        node_types: list[str] | None = None,
+        predicates: list[str] | None = None,
+        topology_only: bool = False,
+    ) -> dict:
+        """Find nodes within k undirected hops of every seed and induced edges.
 
         Args:
             seeds: Two or more canonical entity IDs.
             k: Hop radius (1-5). All seeds must reach the result nodes
                within this many hops treating edges as undirected.
+            node_types: Entity types that receive full metadata. Others appear
+                as stubs. Omit for full data on all nodes.
+            predicates: Predicate names that receive full metadata. Others
+                appear as stubs. Omit for full data on all edges.
+            topology_only: If True, return only IDs and types -- no metadata.
 
         Returns:
-            IntersectionResult with the list of nodes in the intersection.
+            IntersectionResult with nodes and induced subgraph edges.
         """
-        nodes = await _neighborhood_intersection(_db(), seeds, k)
-        return IntersectionResult(
-            seeds=seeds,
-            k=k,
-            node_count=len(nodes),
-            nodes=nodes,
-        ).model_dump()
+        result = await _neighborhood_intersection(
+            _db(),
+            IntersectionQuery(
+                seeds=seeds,
+                k=k,
+                node_types=node_types or [],
+                predicates=predicates or [],
+                topology_only=topology_only,
+            ),
+        )
+        return result.model_dump()
 
     # ------------------------------------------------------------------
     # Tool: describe_entity

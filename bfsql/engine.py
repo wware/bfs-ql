@@ -10,6 +10,8 @@ from bfsql.models import (
     Edge,
     EdgeWithMetadata,
     EntityStub,
+    IntersectionQuery,
+    IntersectionResult,
     Node,
     SchemaSummary,
 )
@@ -107,31 +109,99 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
 
 async def neighborhood_intersection(
     db: GraphDbInterface,
-    seeds: list[str],
-    k: int,
-) -> list[EntityStub]:
-    """Return nodes within k hops of ALL seeds (undirected traversal).
+    query: IntersectionQuery,
+) -> IntersectionResult:
+    """Return nodes within k hops of ALL seeds and the induced subgraph edges.
 
-    Computes the k-hop neighborhood for each seed independently and
-    returns the intersection. Edges are treated as undirected: both
-    outgoing and incoming edges are followed at each hop.
+    Computes the k-hop neighborhood for each seed independently and returns
+    the intersection. Edges are treated as undirected: both outgoing and
+    incoming edges are followed at each hop.
 
     Seeds are included in their own neighborhood, so a seed node appears
     in the result only if it is within k hops of every other seed.
 
-    Returns an empty list if any seed does not exist in the graph.
+    The induced subgraph edges are all edges whose both endpoints are in
+    the intersection node set.
+
+    Returns an empty result if seeds is empty or any seed does not exist.
     """
-    if not seeds:
-        return []
+    node_type_filter: frozenset[str] = frozenset(query.node_types)
+    predicate_filter: frozenset[str] = frozenset(query.predicates)
+
+    if not query.seeds:
+        return _empty_intersection_result(query)
+
     neighborhoods = await asyncio.gather(
-        *[_k_hop_neighborhood(db, seed, k) for seed in seeds]
+        *[_k_hop_neighborhood(db, seed, query.k) for seed in query.seeds]
     )
     for neighborhood in neighborhoods:
-        if not neighborhood:  # missing seed → empty set
-            return []
+        if not neighborhood:  # missing seed → empty intersection
+            return _empty_intersection_result(query)
+
     common_ids = set.intersection(*neighborhoods)
-    nodes = await db.get_nodes_batch(list(common_ids))
-    return [EntityStub(id=n.id, entity_type=n.entity_type) for n in nodes]
+
+    # Fetch raw node stubs for all intersection members
+    raw_nodes = await db.get_nodes_batch(list(common_ids))
+
+    # Build node records with stub/full filtering
+    node_list: list[Node | EntityStub]
+    if query.topology_only:
+        node_list = [EntityStub(id=n.id, entity_type=n.entity_type) for n in raw_nodes]
+    else:
+        node_list = list(
+            await asyncio.gather(
+                *[_apply_node_filter(db, n, node_type_filter) for n in raw_nodes]
+            )
+        )
+
+    # Collect induced edges: edges whose both endpoints are in common_ids.
+    # Fetch outgoing edges for all intersection nodes concurrently, then filter.
+    edge_lists = await asyncio.gather(
+        *[db.edges_from(node_id) for node_id in common_ids]
+    )
+    induced_edges: set[Edge] = set()
+    for elist in edge_lists:
+        for edge in elist:
+            if edge.subject in common_ids and edge.object in common_ids:
+                induced_edges.add(edge)
+
+    # Build edge records with stub/full filtering
+    edge_list: list[EdgeWithMetadata | Edge]
+    if query.topology_only:
+        edge_list = cast(list[EdgeWithMetadata | Edge], list(induced_edges))
+    else:
+        edge_list = list(
+            await asyncio.gather(
+                *[_build_edge(db, edge, predicate_filter) for edge in induced_edges]
+            )
+        )
+
+    schema_summary = SchemaSummary(
+        entity_types_found=sorted({n.entity_type for n in node_list}),
+        predicates_found=sorted({e.predicate for e in edge_list}),
+    )
+    return IntersectionResult(
+        seeds=query.seeds,
+        k=query.k,
+        node_count=len(node_list),
+        edge_count=len(edge_list),
+        nodes=node_list,
+        edges=edge_list,
+        schema_summary=schema_summary,
+    )
+
+
+def _empty_intersection_result(query: IntersectionQuery) -> IntersectionResult:
+    empty_summary = SchemaSummary(entity_types_found=[], predicates_found=[])
+    return IntersectionResult(
+        seeds=query.seeds,
+        k=query.k,
+        node_count=0,
+        edge_count=0,
+        nodes=[],
+        edges=[],
+        schema_summary=empty_summary,
+    )
 
 
 async def _k_hop_neighborhood(
