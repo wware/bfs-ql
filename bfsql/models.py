@@ -106,8 +106,12 @@ class BfsResult(BaseModel, frozen=True):
 
     seeds: list[str] = Field(description="The seed IDs used in this query.")
     max_hops: int = Field(description="The hop depth used in this query.")
-    node_count: int = Field(description="Total number of nodes in the result.")
-    edge_count: int = Field(description="Total number of edges in the result.")
+    node_count: int = Field(
+        description="Total number of nodes in the full result before pagination."
+    )
+    edge_count: int = Field(
+        description="Total number of edges in the full result before pagination."
+    )
     nodes: list[Node | EntityStub] = Field(
         description=(
             "All nodes in the subgraph. Nodes matching node_types (or all nodes when "

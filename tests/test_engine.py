@@ -79,12 +79,19 @@ _EDGE_META: dict[Edge, dict[str, Any]] = {
 
 
 class MockBackend(GraphDbInterface):
-    async def search_entities(self, query: str) -> list[EntityStub]:
-        return [
+    async def search_entities(
+        self,
+        query: str,
+        node_types: list[str] | None = None,
+    ) -> list[EntityStub]:
+        results = [
             EntityStub(id=nid, entity_type=n.entity_type)
             for nid, n in _NODES.items()
             if query.lower() in n.metadata.get("name", "").lower()
         ]
+        if node_types:
+            results = [r for r in results if r.entity_type in node_types]
+        return results
 
     async def edges_from(self, entity_id: str) -> list[Edge]:
         return [e for e in _EDGES if e.subject == entity_id]

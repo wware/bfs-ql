@@ -86,7 +86,11 @@ class PostgresBackend(GraphDbInterface):
     # GraphDbInterface implementation
     # ------------------------------------------------------------------
 
-    async def search_entities(self, query: str) -> list[EntityStub]:
+    async def search_entities(
+        self,
+        query: str,
+        node_types: list[str] | None = None,
+    ) -> list[EntityStub]:
         """Resolve a name to candidate entity stubs.
 
         Search strategy (in order):
@@ -97,14 +101,18 @@ class PostgresBackend(GraphDbInterface):
            token coverage ratio (penalises long names that merely contain the
            query), and a type weight (papers are de-prioritised).
         Excludes merged entities.
+
+        Args:
+            query: A specific entity name or partial name.
+            node_types: If provided, restrict results to these entity types.
         """
-        exact = await self._search_exact(query)
+        exact = await self._search_exact(query, node_types=node_types)
         exact_ids = {e.id for e in exact}
 
         if self._embedding_fn is not None:
-            candidates = await self._search_by_vector(query, limit=30)
+            candidates = await self._search_by_vector(query, limit=30, node_types=node_types)
         else:
-            candidates = await self._search_by_name(query, limit=30)
+            candidates = await self._search_by_name(query, limit=30, node_types=node_types)
 
         # Rerank candidates, excluding anything already in exact results.
         reranked = _rerank(query, [c for c in candidates if c.id not in exact_ids])
@@ -264,41 +272,46 @@ class PostgresBackend(GraphDbInterface):
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _search_exact(self, query: str) -> list[EntityStub]:
+    async def _search_exact(
+        self, query: str, node_types: list[str] | None = None
+    ) -> list[EntityStub]:
         """Return entities whose name is an exact case-insensitive match."""
+        type_filter = "AND entity_type = ANY($2::text[])" if node_types else ""
+        sql = f"""
+            SELECT entity_id, entity_type, name
+            FROM entity
+            WHERE lower(name) = lower($1)
+              AND (status IS NULL OR status != 'merged')
+              {type_filter}
+            ORDER BY entity_type
+            """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT entity_id, entity_type, name
-                FROM entity
-                WHERE lower(name) = lower($1)
-                  AND (status IS NULL OR status != 'merged')
-                ORDER BY entity_type  -- stable ordering; non-paper types sort first
-                """,
-                query,
-            )
+            rows = await conn.fetch(sql, query, *([ node_types] if node_types else []))
         return [
             EntityStub(id=r["entity_id"], entity_type=r["entity_type"], name=r["name"])
             for r in rows
         ]
 
-    async def _search_by_vector(self, query: str, limit: int = 10) -> list[EntityStub]:
+    async def _search_by_vector(
+        self, query: str, limit: int = 10, node_types: list[str] | None = None
+    ) -> list[EntityStub]:
         """Search by cosine similarity on the embedding column."""
         embedding: list[float] = await self._embedding_fn(query)
         embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+        type_filter = "AND entity_type = ANY($3::text[])" if node_types else ""
+        sql = f"""
+            SELECT entity_id, entity_type, name,
+                   1.0 - (embedding::vector <=> $1::vector) AS similarity
+            FROM entity
+            WHERE embedding IS NOT NULL
+              AND (status IS NULL OR status != 'merged')
+              {type_filter}
+            ORDER BY embedding::vector <=> $1::vector
+            LIMIT $2
+            """
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT entity_id, entity_type, name,
-                       1.0 - (embedding::vector <=> $1::vector) AS similarity
-                FROM entity
-                WHERE embedding IS NOT NULL
-                  AND (status IS NULL OR status != 'merged')
-                ORDER BY embedding::vector <=> $1::vector
-                LIMIT $2
-                """,
-                embedding_str,
-                limit,
+                sql, embedding_str, limit, *([ node_types] if node_types else [])
             )
         return [
             EntityStub(
@@ -310,21 +323,24 @@ class PostgresBackend(GraphDbInterface):
             for r in rows
         ]
 
-    async def _search_by_name(self, query: str, limit: int = 10) -> list[EntityStub]:
+    async def _search_by_name(
+        self, query: str, limit: int = 10, node_types: list[str] | None = None
+    ) -> list[EntityStub]:
         """Fallback name search using ILIKE on name."""
         pattern = f"%{query}%"
+        type_filter = "AND entity_type = ANY($3::text[])" if node_types else ""
+        sql = f"""
+            SELECT entity_id, entity_type, name
+            FROM entity
+            WHERE name ILIKE $1
+              AND (status IS NULL OR status != 'merged')
+              {type_filter}
+            ORDER BY name
+            LIMIT $2
+            """
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT entity_id, entity_type, name
-                FROM entity
-                WHERE name ILIKE $1
-                  AND (status IS NULL OR status != 'merged')
-                ORDER BY name
-                LIMIT $2
-                """,
-                pattern,
-                limit,
+                sql, pattern, limit, *([ node_types] if node_types else [])
             )
         return [
             EntityStub(id=r["entity_id"], entity_type=r["entity_type"], name=r["name"])

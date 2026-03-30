@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.4 (2026-03-28)
+
+### Added
+
+- `node_types` filter parameter on `search_entities` -- restricts results to
+  entities of the given types before ranking. Useful for disambiguating common
+  terms that match both concept entities and papers (e.g. pass
+  `node_types=["disease"]` to suppress paper results).
+- `limit` and `offset` pagination parameters on `bfs_query` -- cap the number
+  of nodes returned and allow paging through large neighborhoods.
+  `node_count` and `edge_count` always reflect the full traversal regardless
+  of pagination. Edges are filtered to those whose both endpoints appear in
+  the returned node window. `schema_summary` always reflects the full
+  traversal, not the current page.
+- `schema_summary` is now a deliberate, documented feature of the BFS-QL
+  protocol (previously present but not emphasized). It reports the entity
+  types and predicates actually found in the result subgraph, independent of
+  the `node_types`/`predicates` filters applied. Essential for discovering
+  valid filter values from live results, especially in large or open-world
+  graphs where `describe_schema` returns `comprehensive=False`.
+
 ## 0.1.3 (2026-03-30)
 
 ### Fixed

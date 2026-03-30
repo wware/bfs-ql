@@ -19,13 +19,23 @@ class GraphDbInterface(ABC):
     """
 
     @abstractmethod
-    async def search_entities(self, query: str) -> list[EntityStub]:
+    async def search_entities(
+        self,
+        query: str,
+        node_types: list[str] | None = None,
+    ) -> list[EntityStub]:
         """Resolve a natural-language name or alias to candidate entity stubs.
 
         Results should be ranked by relevance -- cosine similarity for
         vector backends, text match score for full-text index backends.
         The caller inspects results and chooses seeds; ambiguous names
         commonly return multiple candidates.
+
+        Args:
+            query: A specific entity name or partial name.
+            node_types: If provided, restrict results to these entity types.
+                Useful for disambiguating common terms that match both concept
+                entities and papers (e.g. "breast cancer" → disease only).
         """
 
     @abstractmethod

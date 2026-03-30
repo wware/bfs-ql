@@ -31,17 +31,24 @@ class CachedGraphDb(GraphDbInterface):
 
         # Build per-method caches. We wrap async methods with a sync-keyed
         # dict cache since lru_cache does not support async functions directly.
-        self._search_cache: dict[str, list[EntityStub]] = {}
+        self._search_cache: dict[tuple, list[EntityStub]] = {}
         self._edges_from_cache: dict[str, list[Edge]] = {}
         self._edges_to_cache: dict[str, list[Edge]] = {}
         self._get_node_cache: dict[str, Node] = {}
         self._node_meta_cache: dict[str, dict[str, Any]] = {}
         self._edge_meta_cache: dict[Edge, dict[str, Any]] = {}
 
-    async def search_entities(self, query: str) -> list[EntityStub]:
-        if query not in self._search_cache:
-            self._search_cache[query] = await self._backend.search_entities(query)
-        return self._search_cache[query]
+    async def search_entities(
+        self,
+        query: str,
+        node_types: list[str] | None = None,
+    ) -> list[EntityStub]:
+        cache_key = (query, tuple(sorted(node_types)) if node_types else None)
+        if cache_key not in self._search_cache:
+            self._search_cache[cache_key] = await self._backend.search_entities(
+                query, node_types=node_types
+            )
+        return self._search_cache[cache_key]
 
     async def edges_from(self, entity_id: str) -> list[Edge]:
         if entity_id not in self._edges_from_cache:

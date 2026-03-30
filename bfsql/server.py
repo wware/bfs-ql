@@ -112,19 +112,26 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         "like 'desmopressin' or 'Cushing disease', NOT an entity type like "
         "'drug' or 'paper'. Always call this before bfs_query when you have a "
         "name but not yet a canonical ID. Results may be ambiguous; inspect "
-        "entity_type to pick the right one."
+        "entity_type to pick the right one. Use node_types to restrict results "
+        "to specific entity types (e.g. ['disease'] to avoid paper results)."
     )
-    async def search_entities(query: str) -> list[dict]:
+    async def search_entities(
+        query: str,
+        node_types: list[str] | None = None,
+    ) -> list[dict]:
         """Find entities by name or alias.
 
         Args:
             query: A specific entity name or partial name (e.g. 'desmopressin',
                 'Cushing disease'). Do NOT pass an entity type here.
+            node_types: Optional list of entity types to restrict results to
+                (e.g. ['disease', 'gene']). Useful when common terms like
+                'breast cancer' match both concept entities and papers.
 
         Returns:
-            List of EntityStub records with id and entity_type.
+            List of EntityStub records with id, entity_type, and name.
         """
-        results = await _db().search_entities(query)
+        results = await _db().search_entities(query, node_types=node_types)
         return [r.model_dump() for r in results]
 
     # ------------------------------------------------------------------
@@ -145,6 +152,8 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         node_types: list[str] | None = None,
         predicates: list[str] | None = None,
         topology_only: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> dict:
         """Traverse the graph breadth-first from one or more seed entities.
 
@@ -158,11 +167,17 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             topology_only: If True, return only IDs and types for all nodes
                 and edges -- no metadata at all. Use this first on large or
                 unfamiliar graphs to see structure before fetching details.
+            limit: Maximum number of nodes to return. node_count and edge_count
+                always reflect the full result size. Use with offset to page
+                through large subgraphs. Edges are filtered to those whose
+                both endpoints appear in the returned node window.
+            offset: Number of nodes to skip before returning results (default 0).
 
         Returns:
-            BfsResult with nodes and edges. Edge provenance (text spans) is
-            omitted to keep size manageable -- use describe_entity() for full
-            provenance on a specific node.
+            BfsResult with nodes, edges, and schema_summary. node_count and
+            edge_count reflect the full traversal; nodes/edges may be a page.
+            Edge provenance (text spans) is omitted to keep size manageable
+            -- use describe_entity() for full provenance on a specific node.
         """
         result: BfsResult = await _bfs_query(
             _db(),
@@ -174,7 +189,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 topology_only=topology_only,
             ),
         )
-        return _slim_result(result, topology_only=topology_only)
+        return _slim_result(result, topology_only=topology_only, limit=limit, offset=offset)
 
     # ------------------------------------------------------------------
     # Tool: intersect_subgraphs
@@ -280,7 +295,12 @@ _EDGE_META_STRIP = {
 }
 
 
-def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
+def _slim_result(
+    result: BfsResult,
+    topology_only: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+) -> dict:
     """Serialize a BfsResult, stripping verbose fields to keep response size manageable.
 
     When topology_only=True, all metadata is removed and every node/edge is
@@ -291,9 +311,30 @@ def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
     stripped while confidence and source_documents are kept. Full provenance
     is available via describe_entity().
 
-    schema_summary is always included regardless of topology_only or filters.
+    schema_summary is always included and reflects the FULL traversal result
+    regardless of pagination, so callers can discover the complete vocabulary
+    even when viewing only a page of nodes.
+
+    Pagination: limit/offset apply to nodes. Edges are then filtered to only
+    those whose both endpoints are present in the returned node window.
+    node_count and edge_count always reflect the full result before pagination.
     """
     data = result.model_dump()
+
+    # Apply pagination to nodes first, before any further processing.
+    all_nodes = data.get("nodes", [])
+    if offset or limit is not None:
+        end = (offset + limit) if limit is not None else None
+        paged_nodes = all_nodes[offset:end]
+        paged_node_ids = {n["id"] for n in paged_nodes}
+        paged_edges = [
+            e for e in data.get("edges", [])
+            if e["subject"] in paged_node_ids and e["object"] in paged_node_ids
+        ]
+        data["nodes"] = paged_nodes
+        data["edges"] = paged_edges
+    # node_count / edge_count always reflect the full traversal.
+
     if topology_only:
         data["nodes"] = [
             {"id": n["id"], "entity_type": n["entity_type"]}
@@ -313,6 +354,8 @@ def _slim_result(result: BfsResult, topology_only: bool = False) -> dict:
             if isinstance(meta, dict):
                 for key in _EDGE_META_STRIP:
                     meta.pop(key, None)
+
+    # schema_summary always reflects the full traversal, not the page.
     data["schema_summary"] = _build_schema_summary(result).model_dump()
     return data
 
