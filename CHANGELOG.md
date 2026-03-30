@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.7 (2026-03-30)
+
+### Changed
+
+- Server instructions updated: recommend `exclude_node_types=["paper","author"]`
+  and `min_mentions=2` as the default approach for literature-derived graphs;
+  recommend `search_entities` with `node_types` to avoid paper/author noise;
+  recommend `describe_entities` (batch) over sequential `describe_entity` calls.
+- `describe_entity` tool description updated to mention `describe_entities` as
+  the preferred multi-node alternative.
+
 ## 0.1.6 (2026-03-30)
 
 ### Added
