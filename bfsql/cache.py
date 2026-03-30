@@ -81,11 +81,11 @@ class CachedGraphDb(GraphDbInterface):
         return self._edge_meta_cache[edge]
 
     async def entity_types(self) -> list[str]:
-        if self._entity_types_cache is None:
+        if not self._entity_types_cache:
             self._entity_types_cache = await self._backend.entity_types()
         return self._entity_types_cache
 
     async def predicates(self) -> list[str]:
-        if self._predicates_cache is None:
+        if not self._predicates_cache:
             self._predicates_cache = await self._backend.predicates()
         return self._predicates_cache

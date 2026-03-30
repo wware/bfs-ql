@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.3 (2026-03-30)
+
+### Fixed
+
+- `search_entities` now returns relevant concept entities (diseases, genes,
+  drugs, etc.) rather than papers when both match the query. A three-stage
+  pipeline replaces the previous single-pass vector/name search:
+  1. **Exact match short-circuit** -- `WHERE lower(name) = lower(query)` runs
+     first; matching entities are pinned to the top of results regardless of
+     vector score or type.
+  2. **Oversized candidate pool** -- 30 candidates fetched instead of 10 to
+     give the reranker room to work.
+  3. **Composite reranker** -- candidates scored as
+     `0.5 * vec_sim + 0.5 * (token_coverage × type_weight)`.
+     `token_coverage` penalises long names that merely contain the query
+     (a paper title scores far lower than a two-word disease name).
+     `type_weight` de-prioritises papers (0.3) relative to biological
+     concept entities (0.8–1.0).
+- `EntityStub` gains optional `name` and `score` fields, populated by
+  `search_entities` for use by the reranker. BFS stub nodes leave both `None`.
+- `describe_schema` no longer returns empty `entity_types` and `predicates`
+  when the server starts against an empty database and data is loaded later.
+  `CachedGraphDb` now re-queries if the cached list is empty (treating empty
+  as a cache miss), and `describe_schema` refreshes `_state` from the live
+  result.
+
+## 0.1.1 (2026-03-29)
+
+### Fixed
+
+- `describe_schema` returned empty `entity_types` and `predicates` arrays
+  (`comprehensive=true` but lists empty) when the MCP server started before
+  the database was populated. `CachedGraphDb.entity_types()` and
+  `.predicates()` now treat an empty cached list as a cache miss so a
+  subsequent call after data is loaded returns the correct schema.
+
 ## Unreleased (2026-03-26)
 
 ### Added

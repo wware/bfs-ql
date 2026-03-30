@@ -89,13 +89,27 @@ class PostgresBackend(GraphDbInterface):
     async def search_entities(self, query: str) -> list[EntityStub]:
         """Resolve a name to candidate entity stubs.
 
-        If an embedding_fn is configured, uses pgvector cosine similarity
-        ranked search. Otherwise falls back to ILIKE name/synonym matching.
+        Search strategy (in order):
+        1. Exact name match (case-insensitive) — pinned to top of results.
+        2. Vector similarity search (if embedding_fn configured) or ILIKE
+           fallback — fetches an oversized candidate pool.
+        3. Rerank candidates by a composite score combining vector similarity,
+           token coverage ratio (penalises long names that merely contain the
+           query), and a type weight (papers are de-prioritised).
         Excludes merged entities.
         """
+        exact = await self._search_exact(query)
+        exact_ids = {e.id for e in exact}
+
         if self._embedding_fn is not None:
-            return await self._search_by_vector(query)
-        return await self._search_by_name(query)
+            candidates = await self._search_by_vector(query, limit=30)
+        else:
+            candidates = await self._search_by_name(query, limit=30)
+
+        # Rerank candidates, excluding anything already in exact results.
+        reranked = _rerank(query, [c for c in candidates if c.id not in exact_ids])
+        combined = exact + reranked
+        return combined[:10]
 
     async def edges_from(self, entity_id: str) -> list[Edge]:
         """Return all outgoing edges from entity_id."""
@@ -250,6 +264,24 @@ class PostgresBackend(GraphDbInterface):
     # Private helpers
     # ------------------------------------------------------------------
 
+    async def _search_exact(self, query: str) -> list[EntityStub]:
+        """Return entities whose name is an exact case-insensitive match."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT entity_id, entity_type, name
+                FROM entity
+                WHERE lower(name) = lower($1)
+                  AND (status IS NULL OR status != 'merged')
+                ORDER BY entity_type  -- stable ordering; non-paper types sort first
+                """,
+                query,
+            )
+        return [
+            EntityStub(id=r["entity_id"], entity_type=r["entity_type"], name=r["name"])
+            for r in rows
+        ]
+
     async def _search_by_vector(self, query: str, limit: int = 10) -> list[EntityStub]:
         """Search by cosine similarity on the embedding column."""
         embedding: list[float] = await self._embedding_fn(query)
@@ -257,7 +289,8 @@ class PostgresBackend(GraphDbInterface):
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT entity_id, entity_type
+                SELECT entity_id, entity_type, name,
+                       1.0 - (embedding::vector <=> $1::vector) AS similarity
                 FROM entity
                 WHERE embedding IS NOT NULL
                   AND (status IS NULL OR status != 'merged')
@@ -268,18 +301,24 @@ class PostgresBackend(GraphDbInterface):
                 limit,
             )
         return [
-            EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows
+            EntityStub(
+                id=r["entity_id"],
+                entity_type=r["entity_type"],
+                name=r["name"],
+                score=float(r["similarity"]),
+            )
+            for r in rows
         ]
 
     async def _search_by_name(self, query: str, limit: int = 10) -> list[EntityStub]:
-        """Fallback name search using ILIKE on name and synonyms."""
+        """Fallback name search using ILIKE on name."""
         pattern = f"%{query}%"
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT entity_id, entity_type
+                SELECT entity_id, entity_type, name
                 FROM entity
-                WHERE (name ILIKE $1)
+                WHERE name ILIKE $1
                   AND (status IS NULL OR status != 'merged')
                 ORDER BY name
                 LIMIT $2
@@ -288,8 +327,70 @@ class PostgresBackend(GraphDbInterface):
                 limit,
             )
         return [
-            EntityStub(id=r["entity_id"], entity_type=r["entity_type"]) for r in rows
+            EntityStub(id=r["entity_id"], entity_type=r["entity_type"], name=r["name"])
+            for r in rows
         ]
+
+
+# Lower weight = deprioritised in search results. Papers are noisy for
+# concept searches so they receive the lowest weight.
+_TYPE_WEIGHT: dict[str, float] = {
+    "disease": 1.0,
+    "gene": 1.0,
+    "protein": 1.0,
+    "drug": 1.0,
+    "pathway": 1.0,
+    "biologicalprocess": 0.9,
+    "mutation": 0.9,
+    "biomarker": 0.9,
+    "symptom": 0.9,
+    "procedure": 0.8,
+    "anatomicalstructure": 0.8,
+    "hormone": 0.8,
+    "enzyme": 0.8,
+    "paper": 0.3,
+}
+_DEFAULT_TYPE_WEIGHT = 0.7
+
+
+def _token_coverage(query: str, name: str) -> float:
+    """Fraction of name tokens covered by query tokens.
+
+    Returns 1.0 for an exact token match, approaching 0 as name grows
+    relative to query. Penalises long names that merely contain the query.
+    """
+    if not name:
+        return 0.0
+    q_tokens = set(query.lower().split())
+    n_tokens = set(name.lower().split())
+    if not n_tokens:
+        return 0.0
+    return len(q_tokens & n_tokens) / len(n_tokens)
+
+
+_ALPHA = 0.5  # weight for vector similarity
+_BETA = 0.5   # weight for coverage × type_weight
+
+
+def _rerank(query: str, candidates: list["EntityStub"]) -> list["EntityStub"]:
+    """Rerank candidates by a composite of vector similarity, token coverage,
+    and entity type weight.
+
+    score = alpha * vec_sim + beta * (coverage * type_weight)
+
+    When vec_sim is unavailable (name-only search), falls back to pure
+    coverage × type_weight (equivalent to alpha=0, beta=1).
+    """
+
+    def score(stub: "EntityStub") -> float:
+        coverage = _token_coverage(query, stub.name or "")
+        type_weight = _TYPE_WEIGHT.get(stub.entity_type, _DEFAULT_TYPE_WEIGHT)
+        lexical = coverage * type_weight
+        if stub.score is not None:
+            return _ALPHA * stub.score + _BETA * lexical
+        return lexical
+
+    return sorted(candidates, key=score, reverse=True)
 
 
 async def _fetch_evidence(conn, rel_id, rel_key: str) -> list[dict[str, Any]]:

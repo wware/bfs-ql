@@ -87,11 +87,18 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
     async def describe_schema() -> dict:
         """Return schema information for this graph."""
         db = _db()
+        entity_types = await db.entity_types()
+        predicates = await db.predicates()
+        # Refresh _state if it was populated from an empty DB at startup.
+        if entity_types:
+            _state["entity_types"] = entity_types
+        if predicates:
+            _state["predicates"] = predicates
         return SchemaDescription(
             graph_description=_state["graph_description"],
             comprehensive=await db.comprehensive(),
-            entity_types=await db.entity_types(),
-            predicates=await db.predicates(),
+            entity_types=entity_types,
+            predicates=predicates,
             next_steps=await db.next_steps(),
         ).model_dump()
 

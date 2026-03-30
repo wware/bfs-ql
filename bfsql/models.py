@@ -13,6 +13,16 @@ class EntityStub(BaseModel, frozen=True):
 
     id: str = Field(description="Canonical entity ID.")
     entity_type: str = Field(description="Entity type name.")
+    name: str | None = Field(
+        default=None,
+        description="Entity name, populated in search_entities results for reranking. "
+        "None in BFS stub nodes.",
+    )
+    score: float | None = Field(
+        default=None,
+        description="Vector similarity score (0–1, higher=better), populated in "
+        "search_entities results when an embedding_fn is configured. None otherwise.",
+    )
 
 
 class Node(BaseModel, frozen=True):
