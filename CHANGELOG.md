@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 (2026-03-30)
+
+### Added
+
+- `exclude_node_types` parameter on `bfs_query` and `intersect_subgraphs` --
+  removes specified entity types (and all edges touching them) entirely from
+  the result. Distinct from `node_types` (which controls metadata detail level
+  but keeps all nodes). Use `exclude_node_types=["paper", "author"]` to get a
+  compact concept-only subgraph from a large traversal.
+- `describe_entities` tool -- batch variant of `describe_entity`. Accepts a
+  list of canonical IDs and returns full metadata for all of them in a single
+  call. Missing or invalid IDs are silently omitted. Eliminates the need for
+  multiple sequential `describe_entity` calls when expanding several stubs.
+
 ## 0.1.4 (2026-03-28)
 
 ### Added

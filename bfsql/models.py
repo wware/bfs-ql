@@ -74,6 +74,15 @@ class BfsQuery(BaseModel, frozen=True):
             "as stubs. Omit to receive full data on all nodes."
         ),
     )
+    exclude_node_types: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Entity type names to remove entirely from the result. Excluded nodes and "
+            "any edges whose both endpoints are excluded are omitted. Use this to "
+            "suppress high-volume types like 'paper' or 'author' that dominate large "
+            "traversals without adding conceptual value."
+        ),
+    )
     predicates: list[str] = Field(
         default_factory=list,
         description=(
@@ -150,6 +159,13 @@ class IntersectionQuery(BaseModel, frozen=True):
         description=(
             "Entity type names that receive full metadata. Non-matching nodes appear "
             "as stubs. Omit to receive full data on all nodes."
+        ),
+    )
+    exclude_node_types: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Entity type names to remove entirely from the result. Excluded nodes and "
+            "any edges whose both endpoints are excluded are omitted."
         ),
     )
     predicates: list[str] = Field(

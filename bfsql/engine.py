@@ -68,10 +68,21 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
         all_node_ids.add(edge.subject)
         all_node_ids.add(edge.object)
 
-    # Fetch all node types in one batched call, then build node records.
-    # topology_only skips all metadata fetches entirely.
+    # Fetch all node types in one batched call so we can apply exclusion.
     node_id_list = list(all_node_ids)
     raw_nodes = await db.get_nodes_batch(node_id_list)
+
+    # Apply exclude_node_types: remove excluded nodes and edges whose both
+    # endpoints are excluded types. Edges with only one excluded endpoint are
+    # also removed (the endpoint node is gone, so the edge is dangling).
+    if query.exclude_node_types:
+        exclude_set = frozenset(query.exclude_node_types)
+        excluded_ids = {n.id for n in raw_nodes if n.entity_type in exclude_set}
+        raw_nodes = [n for n in raw_nodes if n.id not in excluded_ids]
+        all_edges = {
+            e for e in all_edges
+            if e.subject not in excluded_ids and e.object not in excluded_ids
+        }
     node_list: list[Node | EntityStub]
     if query.topology_only:
         node_list = [EntityStub(id=n.id, entity_type=n.entity_type) for n in raw_nodes]
@@ -142,6 +153,13 @@ async def neighborhood_intersection(
 
     # Fetch raw node stubs for all intersection members
     raw_nodes = await db.get_nodes_batch(list(common_ids))
+
+    # Apply exclude_node_types: remove excluded nodes before building results.
+    if query.exclude_node_types:
+        exclude_set = frozenset(query.exclude_node_types)
+        excluded_ids = {n.id for n in raw_nodes if n.entity_type in exclude_set}
+        raw_nodes = [n for n in raw_nodes if n.id not in excluded_ids]
+        common_ids = {nid for nid in common_ids if nid not in excluded_ids}
 
     # Build node records with stub/full filtering
     node_list: list[Node | EntityStub]

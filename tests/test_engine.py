@@ -479,3 +479,82 @@ async def test_intersection_schema_summary_populated_with_topology_only(db):
     )
     assert result.schema_summary.entity_types_found
     assert result.schema_summary.predicates_found
+
+
+# ---------------------------------------------------------------------------
+# exclude_node_types tests (bfs_query)
+# ---------------------------------------------------------------------------
+
+
+async def test_exclude_node_types_removes_nodes(db):
+    """Excluded entity types are absent from the result entirely."""
+    result = await bfs_query(
+        db, BfsQuery(seeds=["Drug:A"], max_hops=2, exclude_node_types=["Gene"])
+    )
+    ids = node_ids(result)
+    assert "Gene:C" not in ids
+    # Non-excluded nodes still present
+    assert "Drug:A" in ids
+    assert "Disease:B" in ids
+    assert "Disease:D" in ids
+
+
+async def test_exclude_node_types_removes_incident_edges(db):
+    """Edges touching an excluded node are also removed."""
+    result = await bfs_query(
+        db, BfsQuery(seeds=["Drug:A"], max_hops=2, exclude_node_types=["Gene"])
+    )
+    tuples = edge_tuples(result)
+    # INHIBITS connects Drug:A to Gene:C -- should be gone
+    assert ("Drug:A", "INHIBITS", "Gene:C") not in tuples
+    # ASSOCIATED_WITH connects Gene:C to Disease:B -- should be gone
+    assert ("Gene:C", "ASSOCIATED_WITH", "Disease:B") not in tuples
+    # TREATS connects Drug:A to Disease:B -- should remain
+    assert ("Drug:A", "TREATS", "Disease:B") in tuples
+
+
+async def test_exclude_node_types_empty_list_is_noop(db):
+    """An empty exclude list leaves the result unchanged."""
+    result_no_exclude = await bfs_query(db, BfsQuery(seeds=["Drug:A"], max_hops=2))
+    result_empty_exclude = await bfs_query(
+        db, BfsQuery(seeds=["Drug:A"], max_hops=2, exclude_node_types=[])
+    )
+    assert node_ids(result_no_exclude) == node_ids(result_empty_exclude)
+
+
+async def test_exclude_node_types_schema_summary_reflects_exclusion(db):
+    """schema_summary does not include excluded entity types."""
+    result = await bfs_query(
+        db, BfsQuery(seeds=["Drug:A"], max_hops=2, exclude_node_types=["Gene"])
+    )
+    assert "Gene" not in result.schema_summary.entity_types_found
+
+
+# ---------------------------------------------------------------------------
+# exclude_node_types tests (neighborhood_intersection)
+# ---------------------------------------------------------------------------
+
+
+async def test_intersection_exclude_node_types(db):
+    """Excluded types are absent from intersection results."""
+    result = await neighborhood_intersection(
+        db, _iq(["Drug:A", "Gene:C"], k=1, exclude_node_types=["Disease"])
+    )
+    ids = {n.id for n in result.nodes}
+    assert "Disease:B" not in ids
+    # Drug:A and Gene:C remain
+    assert "Drug:A" in ids
+    assert "Gene:C" in ids
+
+
+async def test_intersection_exclude_removes_incident_edges(db):
+    """Edges touching excluded nodes are removed from intersection results."""
+    result = await neighborhood_intersection(
+        db, _iq(["Drug:A", "Gene:C"], k=1, exclude_node_types=["Disease"])
+    )
+    predicates = {e.predicate for e in result.edges}
+    # TREATS (Drug:A->Disease:B) and ASSOCIATED_WITH (Gene:C->Disease:B) removed
+    assert "TREATS" not in predicates
+    assert "ASSOCIATED_WITH" not in predicates
+    # INHIBITS (Drug:A->Gene:C) remains
+    assert "INHIBITS" in predicates

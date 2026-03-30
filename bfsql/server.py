@@ -150,6 +150,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         seeds: list[str],
         max_hops: int,
         node_types: list[str] | None = None,
+        exclude_node_types: list[str] | None = None,
         predicates: list[str] | None = None,
         topology_only: bool = False,
         limit: int | None = None,
@@ -162,6 +163,10 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             max_hops: Maximum graph distance from any seed (1-5).
             node_types: Entity types that receive full metadata. Others appear
                 as stubs. Omit for full data on all nodes.
+            exclude_node_types: Entity types to remove entirely from the result.
+                Excluded nodes and all edges touching them are omitted. Use
+                this to suppress high-volume types like 'paper' or 'author'
+                that dominate large traversals.
             predicates: Predicate names that receive full metadata. Others
                 appear as stubs. Omit for full data on all edges.
             topology_only: If True, return only IDs and types for all nodes
@@ -185,6 +190,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 seeds=seeds,
                 max_hops=max_hops,
                 node_types=node_types or [],
+                exclude_node_types=exclude_node_types or [],
                 predicates=predicates or [],
                 topology_only=topology_only,
             ),
@@ -203,13 +209,14 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
             "questions like 'what actors appeared in movies with both Tom Hanks "
             "and Meg Ryan?' (seeds=[Tom Hanks, Meg Ryan], k=2) or 'what concepts "
             "are near all of these entities?'. Supports the same node_types, "
-            "predicates, and topology_only filters as bfs_query."
+            "exclude_node_types, predicates, and topology_only filters as bfs_query."
         )
     )
     async def intersect_subgraphs(
         seeds: list[str],
         k: int,
         node_types: list[str] | None = None,
+        exclude_node_types: list[str] | None = None,
         predicates: list[str] | None = None,
         topology_only: bool = False,
     ) -> dict:
@@ -221,6 +228,8 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                within this many hops treating edges as undirected.
             node_types: Entity types that receive full metadata. Others appear
                 as stubs. Omit for full data on all nodes.
+            exclude_node_types: Entity types to remove entirely from the result.
+                Excluded nodes and all edges touching them are omitted.
             predicates: Predicate names that receive full metadata. Others
                 appear as stubs. Omit for full data on all edges.
             topology_only: If True, return only IDs and types -- no metadata.
@@ -234,6 +243,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 seeds=seeds,
                 k=k,
                 node_types=node_types or [],
+                exclude_node_types=exclude_node_types or [],
                 predicates=predicates or [],
                 topology_only=topology_only,
             ),
@@ -260,6 +270,37 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         node = await _db().get_node(id)
         metadata = await _db().metadata_for_node(id)
         return {"id": node.id, "entity_type": node.entity_type, **metadata}
+
+    # ------------------------------------------------------------------
+    # Tool: describe_entities (batch)
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description="Retrieve full metadata for multiple entities by canonical ID "
+        "in a single call. Use this instead of multiple describe_entity calls when "
+        "you have several stub nodes to expand. Returns results in the same order "
+        "as the input ids list; missing or invalid IDs are omitted from results."
+    )
+    async def describe_entities(ids: list[str]) -> list[dict]:
+        """Get full metadata for multiple entities.
+
+        Args:
+            ids: List of canonical entity IDs to expand.
+
+        Returns:
+            List of full node metadata dicts, one per valid ID, in input order.
+            IDs that do not exist in the graph are silently omitted.
+        """
+        db = _db()
+        results = []
+        for entity_id in ids:
+            try:
+                node = await db.get_node(entity_id)
+                metadata = await db.metadata_for_node(entity_id)
+                results.append({"id": node.id, "entity_type": node.entity_type, **metadata})
+            except KeyError:
+                pass
+        return results
 
     return mcp
 

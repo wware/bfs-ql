@@ -135,13 +135,55 @@ async def test_describe_entity_missing(server):
         await fn(id="NoSuch:X")
 
 
-async def test_five_tools_registered(server):
-    """Exactly five tools are registered."""
+async def test_bfs_query_exclude_node_types(server):
+    """exclude_node_types removes nodes and their edges from the result."""
+    fn = await _get_tool(server, "bfs_query")
+    result = await fn(seeds=["Drug:A"], max_hops=2, exclude_node_types=["Gene"])
+    node_ids = {n["id"] for n in result["nodes"]}
+    assert "Gene:C" not in node_ids
+    assert "Drug:A" in node_ids
+    assert "Disease:B" in node_ids
+    # INHIBITS touches Gene:C -- should be absent
+    predicates = {e["predicate"] for e in result["edges"]}
+    assert "INHIBITS" not in predicates
+    assert "TREATS" in predicates
+
+
+async def test_describe_entities_batch(server):
+    """describe_entities returns full metadata for multiple IDs."""
+    fn = await _get_tool(server, "describe_entities")
+    results = await fn(ids=["Drug:A", "Disease:B"])
+    assert len(results) == 2
+    ids = {r["id"] for r in results}
+    assert ids == {"Drug:A", "Disease:B"}
+    for r in results:
+        assert "entity_type" in r
+
+
+async def test_describe_entities_skips_missing(server):
+    """describe_entities silently omits IDs that don't exist."""
+    fn = await _get_tool(server, "describe_entities")
+    results = await fn(ids=["Drug:A", "NoSuch:X", "Disease:B"])
+    assert len(results) == 2
+    ids = {r["id"] for r in results}
+    assert ids == {"Drug:A", "Disease:B"}
+
+
+async def test_describe_entities_empty(server):
+    """describe_entities with empty list returns empty list."""
+    fn = await _get_tool(server, "describe_entities")
+    results = await fn(ids=[])
+    assert results == []
+
+
+async def test_six_tools_registered(server):
+    """Exactly six tools are registered."""
     tools = await server.get_tools()
     assert set(tools.keys()) == {
         "describe_schema",
         "search_entities",
         "bfs_query",
         "describe_entity",
+        "describe_entities",
         "intersect_subgraphs",
     }
