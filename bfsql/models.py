@@ -90,6 +90,18 @@ class BfsQuery(BaseModel, frozen=True):
             "Non-matching edges appear as stubs. Omit to receive full data on all edges."
         ),
     )
+    min_mentions: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Minimum number of corpus-wide mentions required for a node to appear in "
+            "the result. Nodes with fewer mentions (and all edges touching them) are "
+            "omitted. Use this to suppress low-confidence provisional entities that "
+            "appear in only one or two source documents. Default 1 (no filtering). "
+            "Requires the backend to populate a 'total_mentions' field in node "
+            "metadata; nodes without this field are always included."
+        ),
+    )
     topology_only: bool = Field(
         default=False,
         description=(
@@ -173,6 +185,15 @@ class IntersectionQuery(BaseModel, frozen=True):
         description=(
             "Predicate names that receive full metadata including provenance. "
             "Non-matching edges appear as stubs. Omit to receive full data on all edges."
+        ),
+    )
+    min_mentions: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Minimum number of corpus-wide mentions required for a node to appear in "
+            "the result. Nodes with fewer mentions (and all edges touching them) are "
+            "omitted. Nodes without a 'total_mentions' field are always included."
         ),
     )
     topology_only: bool = Field(

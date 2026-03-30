@@ -152,6 +152,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         node_types: list[str] | None = None,
         exclude_node_types: list[str] | None = None,
         predicates: list[str] | None = None,
+        min_mentions: int = 1,
         topology_only: bool = False,
         limit: int | None = None,
         offset: int = 0,
@@ -169,6 +170,10 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 that dominate large traversals.
             predicates: Predicate names that receive full metadata. Others
                 appear as stubs. Omit for full data on all edges.
+            min_mentions: Minimum corpus-wide mention count for a node to
+                appear. Nodes with fewer mentions (and edges touching them)
+                are omitted. Default 1 (no filtering). Use 2 or 3 to suppress
+                low-confidence provisional entities from single documents.
             topology_only: If True, return only IDs and types for all nodes
                 and edges -- no metadata at all. Use this first on large or
                 unfamiliar graphs to see structure before fetching details.
@@ -192,6 +197,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 node_types=node_types or [],
                 exclude_node_types=exclude_node_types or [],
                 predicates=predicates or [],
+                min_mentions=min_mentions,
                 topology_only=topology_only,
             ),
         )
@@ -218,6 +224,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
         node_types: list[str] | None = None,
         exclude_node_types: list[str] | None = None,
         predicates: list[str] | None = None,
+        min_mentions: int = 1,
         topology_only: bool = False,
     ) -> dict:
         """Find nodes within k undirected hops of every seed and induced edges.
@@ -232,6 +239,8 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 Excluded nodes and all edges touching them are omitted.
             predicates: Predicate names that receive full metadata. Others
                 appear as stubs. Omit for full data on all edges.
+            min_mentions: Minimum corpus-wide mention count for a node to
+                appear. Default 1 (no filtering).
             topology_only: If True, return only IDs and types -- no metadata.
 
         Returns:
@@ -245,6 +254,7 @@ def create_server(backend_or_factory, graph_description: str = "") -> FastMCP:
                 node_types=node_types or [],
                 exclude_node_types=exclude_node_types or [],
                 predicates=predicates or [],
+                min_mentions=min_mentions,
                 topology_only=topology_only,
             ),
         )

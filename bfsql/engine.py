@@ -72,12 +72,15 @@ async def bfs_query(db: GraphDbInterface, query: BfsQuery) -> BfsResult:
     node_id_list = list(all_node_ids)
     raw_nodes = await db.get_nodes_batch(node_id_list)
 
-    # Apply exclude_node_types: remove excluded nodes and edges whose both
-    # endpoints are excluded types. Edges with only one excluded endpoint are
-    # also removed (the endpoint node is gone, so the edge is dangling).
+    # Apply exclude_node_types then min_mentions: remove excluded/low-signal
+    # nodes and any edges that become dangling as a result.
+    excluded_ids: set[str] = set()
     if query.exclude_node_types:
         exclude_set = frozenset(query.exclude_node_types)
-        excluded_ids = {n.id for n in raw_nodes if n.entity_type in exclude_set}
+        excluded_ids |= {n.id for n in raw_nodes if n.entity_type in exclude_set}
+    if query.min_mentions > 1:
+        excluded_ids |= _below_min_mentions(raw_nodes, query.min_mentions)
+    if excluded_ids:
         raw_nodes = [n for n in raw_nodes if n.id not in excluded_ids]
         all_edges = {
             e for e in all_edges
@@ -154,10 +157,14 @@ async def neighborhood_intersection(
     # Fetch raw node stubs for all intersection members
     raw_nodes = await db.get_nodes_batch(list(common_ids))
 
-    # Apply exclude_node_types: remove excluded nodes before building results.
+    # Apply exclude_node_types then min_mentions: remove excluded/low-signal nodes.
+    excluded_ids: set[str] = set()
     if query.exclude_node_types:
         exclude_set = frozenset(query.exclude_node_types)
-        excluded_ids = {n.id for n in raw_nodes if n.entity_type in exclude_set}
+        excluded_ids |= {n.id for n in raw_nodes if n.entity_type in exclude_set}
+    if query.min_mentions > 1:
+        excluded_ids |= _below_min_mentions(raw_nodes, query.min_mentions)
+    if excluded_ids:
         raw_nodes = [n for n in raw_nodes if n.id not in excluded_ids]
         common_ids = {nid for nid in common_ids if nid not in excluded_ids}
 
@@ -275,6 +282,21 @@ async def _apply_node_filter(
         metadata = await db.metadata_for_node(node.id)
         return Node(id=node.id, entity_type=node.entity_type, metadata=metadata)
     return EntityStub(id=node.id, entity_type=node.entity_type)
+
+
+def _below_min_mentions(nodes: list[Node], min_mentions: int) -> set[str]:
+    """Return IDs of nodes whose total_mentions is known and below min_mentions.
+
+    Nodes that do not have a 'total_mentions' field in metadata are considered
+    to have an unknown mention count and are never excluded by this filter.
+    """
+    return {
+        n.id
+        for n in nodes
+        if isinstance(n, Node)
+        and "total_mentions" in n.metadata
+        and n.metadata["total_mentions"] < min_mentions
+    }
 
 
 async def _build_edge(

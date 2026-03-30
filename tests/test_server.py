@@ -176,6 +176,16 @@ async def test_describe_entities_empty(server):
     assert results == []
 
 
+async def test_bfs_query_min_mentions(server):
+    """min_mentions=1 (default) includes all nodes; higher values filter by total_mentions."""
+    fn = await _get_tool(server, "bfs_query")
+    # Mock backend nodes have no total_mentions -- all survive regardless of threshold.
+    result = await fn(seeds=["Drug:A"], max_hops=2, min_mentions=99)
+    node_ids = {n["id"] for n in result["nodes"]}
+    assert "Gene:C" in node_ids
+    assert "Disease:D" in node_ids
+
+
 async def test_six_tools_registered(server):
     """Exactly six tools are registered."""
     tools = await server.get_tools()

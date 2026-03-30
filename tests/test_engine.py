@@ -558,3 +558,111 @@ async def test_intersection_exclude_removes_incident_edges(db):
     assert "ASSOCIATED_WITH" not in predicates
     # INHIBITS (Drug:A->Gene:C) remains
     assert "INHIBITS" in predicates
+
+
+# ---------------------------------------------------------------------------
+# min_mentions tests
+# ---------------------------------------------------------------------------
+
+# Extend the mock graph with a node that has total_mentions in metadata.
+_NODES_WITH_MENTIONS: dict[str, Node] = {
+    **_NODES,
+    "Drug:A": Node(
+        id="Drug:A",
+        entity_type="Drug",
+        metadata={"name": "DrugA", "mw": 342.4, "total_mentions": 5},
+    ),
+    "Disease:B": Node(
+        id="Disease:B",
+        entity_type="Disease",
+        metadata={"name": "DiseaseB", "mesh": "D001", "total_mentions": 3},
+    ),
+    "Gene:C": Node(
+        id="Gene:C",
+        entity_type="Gene",
+        metadata={"name": "GeneC", "hgnc": "123", "total_mentions": 1},
+    ),
+    "Disease:D": Node(
+        id="Disease:D",
+        entity_type="Disease",
+        metadata={"name": "DiseaseD", "mesh": "D002", "total_mentions": 1},
+    ),
+}
+
+
+class MockBackendWithMentions(MockBackend):
+    """Mock backend where nodes have total_mentions in metadata."""
+
+    async def get_node(self, entity_id: str) -> Node:
+        if entity_id not in _NODES_WITH_MENTIONS:
+            raise KeyError(entity_id)
+        return _NODES_WITH_MENTIONS[entity_id]
+
+    async def get_nodes_batch(self, entity_ids: list[str]) -> list[Node]:
+        return [_NODES_WITH_MENTIONS[eid] for eid in entity_ids if eid in _NODES_WITH_MENTIONS]
+
+    async def metadata_for_node(self, entity_id: str) -> dict[str, Any]:
+        return _NODES_WITH_MENTIONS[entity_id].metadata
+
+
+@pytest.fixture
+def db_with_mentions():
+    return MockBackendWithMentions()
+
+
+async def test_min_mentions_filters_low_signal_nodes(db_with_mentions):
+    """Nodes with total_mentions below threshold are excluded."""
+    result = await bfs_query(
+        db_with_mentions,
+        BfsQuery(seeds=["Drug:A"], max_hops=2, min_mentions=2),
+    )
+    ids = node_ids(result)
+    # Gene:C and Disease:D have total_mentions=1, below threshold
+    assert "Gene:C" not in ids
+    assert "Disease:D" not in ids
+    # Drug:A (5) and Disease:B (3) remain
+    assert "Drug:A" in ids
+    assert "Disease:B" in ids
+
+
+async def test_min_mentions_removes_incident_edges(db_with_mentions):
+    """Edges touching a filtered-out node are also removed."""
+    result = await bfs_query(
+        db_with_mentions,
+        BfsQuery(seeds=["Drug:A"], max_hops=2, min_mentions=2),
+    )
+    tuples = edge_tuples(result)
+    # INHIBITS touches Gene:C (filtered) -- should be gone
+    assert ("Drug:A", "INHIBITS", "Gene:C") not in tuples
+    # TREATS (Drug:A->Disease:B) remains
+    assert ("Drug:A", "TREATS", "Disease:B") in tuples
+
+
+async def test_min_mentions_default_includes_all(db_with_mentions):
+    """Default min_mentions=1 includes all nodes."""
+    result = await bfs_query(
+        db_with_mentions, BfsQuery(seeds=["Drug:A"], max_hops=2)
+    )
+    assert "Gene:C" in node_ids(result)
+    assert "Disease:D" in node_ids(result)
+
+
+async def test_min_mentions_no_total_mentions_field_included(db):
+    """Nodes without total_mentions in metadata are always included."""
+    # The standard mock backend has no total_mentions -- all nodes should survive.
+    result = await bfs_query(db, BfsQuery(seeds=["Drug:A"], max_hops=2, min_mentions=99))
+    assert "Gene:C" in node_ids(result)
+    assert "Disease:D" in node_ids(result)
+
+
+async def test_min_mentions_intersection(db_with_mentions):
+    """min_mentions also applies to neighborhood_intersection."""
+    result = await neighborhood_intersection(
+        db_with_mentions,
+        _iq(["Drug:A", "Gene:C"], k=1, min_mentions=2),
+    )
+    ids = {n.id for n in result.nodes}
+    # Gene:C has total_mentions=1, filtered out even though it's a seed
+    assert "Gene:C" not in ids
+    assert "Drug:A" in ids
+    assert "Disease:B" in ids

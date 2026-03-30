@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.6 (2026-03-30)
+
+### Added
+
+- `min_mentions` parameter on `bfs_query` and `intersect_subgraphs` -- filters
+  out nodes whose `total_mentions` field is below the given threshold (default
+  1, i.e. no filtering). Nodes without a `total_mentions` field in metadata
+  are always included regardless of threshold. Use `min_mentions=2` or `3` to
+  suppress low-confidence provisional entities that appear in only one source
+  document. Edges touching filtered-out nodes are also removed.
+
 ## 0.1.5 (2026-03-30)
 
 ### Added
