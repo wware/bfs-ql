@@ -7,7 +7,7 @@ packages = ["bfsql"]
 
 [project]
 name = "bfs-ql"
-version = "0.1.7"
+version = "0.1.8"
 description = "BFS-QL graph query protocol for language models"
 readme = "README.md"
 license = { text = "MIT" }

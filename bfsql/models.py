@@ -3,6 +3,48 @@
 from typing import Any
 from pydantic import BaseModel, Field
 
+# Usage guidance included in every describe_schema response so that any LLM
+# client automatically learns how to use the BFS-QL tools correctly without
+# requiring per-client prompt engineering.
+TOOL_USAGE_NOTES = """\
+## BFS-QL Tool Usage Guide
+
+### Typical workflow
+1. `describe_schema()` — always call first to learn entity types, predicates,
+   and any backend-specific workflow instructions in `next_steps`.
+2. `search_entities(query)` — resolve a named entity to its canonical ID.
+   Call separately for each named entity you need.
+3. `bfs_query(seeds, max_hops, ...)` — traverse the graph from known IDs.
+4. `describe_entity(id)` — expand a stub node that needs more detail.
+5. `intersect_subgraphs(queries)` — find nodes reachable from multiple seeds;
+   useful for "how are X and Y connected?" questions.
+
+### bfs_query parameters
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| seeds | required | List of canonical entity IDs to start from |
+| max_hops | required | Graph distance (1=direct neighbors, 2=indirect). Start with 1; only go higher if needed |
+| node_types | None | Entity types that get **full metadata**; all others become topology-only stubs. **Always set this when the user asks about a specific type** (e.g. `node_types=["gene"]` when asked about genes) |
+| exclude_node_types | None | Entity types to **remove entirely** (not even stubs). Use to suppress high-volume noise types like `paper` or `author` |
+| predicates | None | Predicate names that get full metadata; others become stubs |
+| topology_only | False | Return only IDs and types for all nodes/edges — fast structural survey |
+| min_mentions | 1 | Minimum corpus-wide mention count; lower-confidence nodes are omitted |
+| limit / offset | None / 0 | Pagination; node_count/edge_count always reflect the full result size |
+
+### Critical rules
+- **Use `node_types` filtering** whenever the question targets a specific entity type.
+  Without it, results may contain hundreds of nodes and the entities of interest are
+  buried as stubs. Example: "what genes are linked to X?" → `node_types=["gene"]`.
+- **Do not fabricate results.** If a query returns empty results or no nodes of the
+  requested type, say so honestly. Try `node_types` filtering, then increase `max_hops`,
+  then try `intersect_subgraphs` — before concluding the data isn't there.
+- **Topology is always preserved.** Non-matching nodes/edges become stubs (id + type),
+  not omissions. You can see the full graph structure and selectively expand stubs.
+- **exclude_node_types is aggressive** — it removes nodes and all their edges entirely,
+  unlike node_types which merely downgrades them to stubs.
+"""
+
 
 class EntityStub(BaseModel, frozen=True):
     """Minimal identity record for an entity -- ID and type only.
@@ -262,4 +304,11 @@ class SchemaDescription(BaseModel, frozen=True):
             "Backend-authored instructions for how to proceed after describe_schema. "
             "Follow these in preference to any generic default workflow."
         )
+    )
+    tool_usage_notes: str = Field(
+        default=TOOL_USAGE_NOTES,
+        description=(
+            "Reference guide for all BFS-QL tools: parameter meanings, filtering "
+            "rules, and critical usage patterns. Read this before making tool calls."
+        ),
     )
