@@ -409,6 +409,18 @@ def _rerank(query: str, candidates: list["EntityStub"]) -> list["EntityStub"]:
     return sorted(candidates, key=score, reverse=True)
 
 
+async def _table_exists(conn, table_name: str) -> bool:
+    """Check if a table exists in the current schema without triggering a postgres error."""
+    row = await conn.fetchrow(
+        """
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = current_schema() AND table_name = $1
+        """,
+        table_name,
+    )
+    return row is not None
+
+
 async def _fetch_evidence(conn, rel_id, rel_key: str) -> list[dict[str, Any]]:
     """Return provenance rows from whichever evidence table exists in this schema.
 
@@ -418,7 +430,7 @@ async def _fetch_evidence(conn, rel_id, rel_key: str) -> list[dict[str, Any]]:
     - kgserver schema: ``bundle_evidence`` table keyed by relationship_key string
       with text_span / confidence / document_id columns.
     """
-    try:
+    if await _table_exists(conn, "evidence"):
         rows = await conn.fetch(
             """
             SELECT evidence_type, confidence_score, metadata_
@@ -436,8 +448,6 @@ async def _fetch_evidence(conn, rel_id, rel_key: str) -> list[dict[str, Any]]:
             }
             for r in rows
         ]
-    except Exception:
-        pass
 
     try:
         rows = await conn.fetch(
